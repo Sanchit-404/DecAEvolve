@@ -89,12 +89,29 @@ def main(
     evaluators[0].analyse(initial, island_id=None, version_generated=None, profiler=profiler)
 
     # Set global max sample nums.
-    samplers = [sampler.Sampler(database, evaluators, 
-                                config.samples_per_prompt, 
-                                max_sample_nums=max_sample_nums, 
-                                llm_class=class_config.llm_class,
-                                config = config) 
-                                for _ in range(config.num_samplers)]
+    # Choose sampler type based on GRPO configuration
+    if config.grpo_config.use_grpo:
+        # Import GRPO sampler
+        from llmsr.grpo_sampler import GRPOSampler
+        
+        # Create GRPO samplers with additional configuration
+        samplers = [GRPOSampler(
+            database=database, 
+            evaluators=evaluators,
+            samples_per_prompt=config.samples_per_prompt,
+            config=config,
+            model_path=config.grpo_config.model_path,
+            max_sample_nums=max_sample_nums,
+            grpo_config=config.grpo_config.__dict__
+        ) for _ in range(config.num_samplers)]
+    else:
+        # Use standard sampler
+        samplers = [class_config.sampler_class(database, evaluators, 
+                                    config.samples_per_prompt, 
+                                    max_sample_nums=max_sample_nums, 
+                                    llm_class=class_config.llm_class,
+                                    config = config) 
+                                    for _ in range(config.num_samplers)]
 
     # This loop can be executed in parallel on remote sampler machines. As each
     # sampler enters an infinite loop, without parallelization only the first

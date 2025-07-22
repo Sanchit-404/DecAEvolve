@@ -44,6 +44,39 @@ class ExperienceBufferConfig:
 
 
 @dataclasses.dataclass(frozen=True)
+class GRPOConfig:
+    """Configuration for GRPO training.
+    
+    Args:
+        model_path: Path to the base model for GRPO training
+        use_grpo: Whether to use GRPO training
+        learning_rate: Learning rate for GRPO training
+        per_device_train_batch_size: Batch size per device
+        gradient_accumulation_steps: Number of gradient accumulation steps
+        max_prompt_length: Maximum prompt length
+        max_completion_length: Maximum completion length
+        num_generations: Number of generations per prompt
+        update_frequency: How often to perform GRPO updates
+        use_lora: Whether to use LoRA for efficient training
+        kl_coeff: KL coefficient for regularization
+    """
+    model_path: str = "HuggingFaceTB/SmolLM-135M-Instruct"
+    use_grpo: bool = False
+    learning_rate: float = 1e-5
+    per_device_train_batch_size: int = 4
+    gradient_accumulation_steps: int = 2
+    max_prompt_length: int = 512
+    max_completion_length: int = 256
+    num_generations: int = 8
+    update_frequency: int = 50
+    use_lora: bool = True
+    kl_coeff: float = 0.1
+    optim: str = "adamw_8bit"
+    num_train_epochs: int = 1
+    bf16: bool = True
+
+
+@dataclasses.dataclass(frozen=True)
 class Config:
     """Configuration for LLMSR experiments.
    
@@ -54,6 +87,7 @@ class Config:
        samples_per_prompt (int): Number of hypotheses per prompt
        evaluate_timeout_seconds (int): Hypothesis evaluation timeout
        use_api (bool): API usage flag
+       grpo_config: GRPO-specific configuration
    """
     experience_buffer: ExperienceBufferConfig = dataclasses.field(default_factory=ExperienceBufferConfig)
     num_samplers: int = 1 
@@ -62,9 +96,11 @@ class Config:
     evaluate_timeout_seconds: int = 30  
     use_api: bool = False
     api_model: str = "gpt-3.5-turbo"
+    grpo_config: GRPOConfig = dataclasses.field(default_factory=GRPOConfig)
 
 
 @dataclasses.dataclass()
 class ClassConfig:
     llm_class: Type[sampler.LLM]
     sandbox_class: Type[evaluator.Sandbox]
+    sampler_class: Type[sampler.Sampler] = sampler.Sampler
