@@ -29,6 +29,9 @@ import json
 import http.client
 import os
 
+# New imports for Hugging Face integration
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 
 class LLM(ABC):
@@ -43,7 +46,6 @@ class LLM(ABC):
     def draw_samples(self, prompt: str) -> Collection[str]:
         """ Return multiple predicted continuations of `prompt`. """
         return [self._draw_sample(prompt) for _ in range(self._samples_per_prompt)]
-
 
 
 class Sampler:
@@ -62,7 +64,11 @@ class Sampler:
         self._samples_per_prompt = samples_per_prompt
         self._database = database
         self._evaluators = evaluators
-        self._llm = llm_class(samples_per_prompt)
+        # Pass model configuration to LLM class
+        if llm_class == HuggingFaceLLM:
+            self._llm = llm_class(samples_per_prompt, model_name=config.hf_model)
+        else:
+            self._llm = llm_class(samples_per_prompt)
         self._max_sample_nums = max_sample_nums
         self.config = config
 
@@ -278,3 +284,195 @@ class LocalLLM(LLM):
             
             return response if self._batch_inference else response[0]
 
+
+class HuggingFaceLLM(LLM):
+    def __init__(self, samples_per_prompt: int, model_name: str = None, 
+                 batch_inference: bool = True, trim: bool = True) -> None:
+        """
+        Hugging Face model for equation generation - matches LocalLLM structure exactly.
+        
+        Args:
+            samples_per_prompt: Number of samples to generate per prompt
+            model_name: Hugging Face model identifier
+            batch_inference: Use batch inference when sampling
+            trim: Whether to trim the response to extract equation body
+        """
+        super().__init__(samples_per_prompt)
+        
+        # Default model if none specified  
+        if model_name is None:
+            model_name = "microsoft/DialoGPT-medium"
+            
+        self.model_name = model_name
+        self._batch_inference = batch_inference
+        self._trim = trim
+        
+        # Instruction prompt - exactly like LocalLLM
+        instruction_prompt = ("You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. \
+                             Complete the 'equation' function below, considering the physical meaning and relationships of inputs.\n\n")
+        self._instruction_prompt = instruction_prompt
+        
+        # Load model and tokenizer
+        print(f"Loading model: {model_name}")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            
+            # Special handling for LLaMA models with rope_scaling issues
+            model_kwargs = {
+                'torch_dtype': torch.float16 if torch.cuda.is_available() else torch.float32,
+                'device_map': "auto" if torch.cuda.is_available() else None,
+                'trust_remote_code': True,
+            }
+            
+            # For LLaMA models, add specific config to handle rope_scaling
+            if 'llama' in model_name.lower():
+                try:
+                    from transformers import LlamaConfig
+                    config = LlamaConfig.from_pretrained(model_name)
+                    # Override rope_scaling to the expected format if it exists
+                    if hasattr(config, 'rope_scaling') and config.rope_scaling is not None:
+                        if isinstance(config.rope_scaling, dict) and 'rope_type' in config.rope_scaling:
+                            # Convert new format to old format
+                            config.rope_scaling = {
+                                'type': config.rope_scaling.get('rope_type', 'linear'),
+                                'factor': config.rope_scaling.get('factor', 1.0)
+                            }
+                    model_kwargs['config'] = config
+                except ImportError:
+                    pass  # If LlamaConfig not available, continue without it
+                    
+            self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+            
+        except Exception as e:
+            print(f"Failed to load {model_name}: {e}")
+            # Try multiple fallback models in order of preference
+            fallback_models = [
+                "microsoft/DialoGPT-medium",
+                "gpt2-medium", 
+                "gpt2",
+                "distilgpt2"
+            ]
+            
+            for fallback in fallback_models:
+                try:
+                    print(f"Trying fallback model: {fallback}")
+                    model_name = fallback
+                    self.model_name = model_name
+                    self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+                    self.model = AutoModelForCausalLM.from_pretrained(
+                        model_name,
+                        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                        device_map="auto" if torch.cuda.is_available() else None,
+                    )
+                    print(f"Successfully loaded fallback model: {fallback}")
+                    break
+                except Exception as fallback_e:
+                    print(f"Fallback {fallback} also failed: {fallback_e}")
+                    continue
+            else:
+                raise RuntimeError("All fallback models failed to load")
+        
+        # Set pad token if not exists
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            
+        self.model.eval()
+        print(f"Model loaded successfully on {self.device}")
+
+    def draw_samples(self, prompt: str, config: config_lib.Config) -> Collection[str]:
+        """Returns multiple equation program skeleton hypotheses for the given `prompt`."""
+        if config.use_api:
+            return self._draw_samples_api(prompt, config)
+        else:
+            return self._draw_samples_local(prompt, config)
+
+    def _draw_samples_local(self, prompt: str, config: config_lib.Config) -> Collection[str]:
+        """Local sampling method - matches LocalLLM structure exactly."""
+        # instruction - exactly like LocalLLM
+        prompt = '\n'.join([self._instruction_prompt, prompt])
+        
+        while True:
+            try:
+                all_samples = []
+                # response from llm model
+                if self._batch_inference:
+                    response = self._do_request(prompt)
+                    for res in response:
+                        all_samples.append(res)
+                else:
+                    for _ in range(self._samples_per_prompt):
+                        response = self._do_request(prompt)
+                        all_samples.append(response)
+
+                # trim equation program skeleton body from samples
+                if self._trim:
+                    all_samples = [_extract_body(sample, config) for sample in all_samples]
+                
+                return all_samples
+            except Exception:
+                continue
+
+    def _draw_samples_api(self, prompt: str, config: config_lib.Config) -> Collection[str]:
+        """API sampling method - placeholder for consistency."""
+        # Just call local method for now
+        return self._draw_samples_local(prompt, config)
+
+    def _do_request(self, content: str) -> str:
+        """Generate response using HuggingFace model - matches LocalLLM _do_request signature."""
+        content = content.strip('\n').strip()
+        # repeat the prompt for batch inference
+        repeat_prompt: int = self._samples_per_prompt if self._batch_inference else 1
+        
+        # Generate using HuggingFace model
+        inputs = self.tokenizer(content, return_tensors="pt", truncation=True, max_length=1024)
+        
+        if torch.cuda.is_available():
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        
+        with torch.no_grad():
+            if self._batch_inference:
+                # Generate multiple samples at once
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=256,
+                    num_return_sequences=repeat_prompt,
+                    do_sample=True,
+                    temperature=0.8,
+                    top_p=0.9,
+                    top_k=50,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                )
+                
+                # Decode all outputs
+                responses = []
+                for output in outputs:
+                    generated_text = self.tokenizer.decode(
+                        output[inputs['input_ids'].shape[1]:], 
+                        skip_special_tokens=True
+                    )
+                    responses.append(generated_text.strip())
+                
+                return responses
+            else:
+                # Generate single sample
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=1024,
+                    do_sample=True,
+                    temperature=0.8,
+                    top_p=0.9,
+                    top_k=50,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                )
+                
+                # Decode output
+                generated_text = self.tokenizer.decode(
+                    outputs[0][inputs['input_ids'].shape[1]:], 
+                    skip_special_tokens=True
+                )
+                
+                return generated_text.strip()

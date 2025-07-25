@@ -19,14 +19,7 @@ parser.add_argument('--spec_path', type=str)
 parser.add_argument('--log_path', type=str, default="./logs/oscillator1")
 parser.add_argument('--problem_name', type=str, default="oscillator1")
 parser.add_argument('--run_id', type=int, default=1)
-
-# GRPO-specific arguments
-parser.add_argument('--use_grpo', action='store_true', help='Enable GRPO training')
-parser.add_argument('--grpo_model', type=str, default="HuggingFaceTB/SmolLM-135M-Instruct", 
-                   help='Model path for GRPO training')
-parser.add_argument('--grpo_lr', type=float, default=1e-5, help='GRPO learning rate')
-parser.add_argument('--grpo_update_freq', type=int, default=50, help='GRPO update frequency')
-parser.add_argument('--grpo_batch_size', type=int, default=4, help='GRPO batch size')
+parser.add_argument('--hf_model', type=str, default="Qwen/Qwen3-1.5B-Instruct")
 args = parser.parse_args()
 
 
@@ -34,22 +27,11 @@ args = parser.parse_args()
 
 if __name__ == '__main__':
     # Load config and parameters
-    class_config = config.ClassConfig(llm_class=sampler.LocalLLM, sandbox_class=evaluator.LocalSandbox)
-    
-    # Create GRPO config
-    grpo_config = config.GRPOConfig(
-        model_path=args.grpo_model,
-        use_grpo=args.use_grpo,
-        learning_rate=args.grpo_lr,
-        per_device_train_batch_size=args.grpo_batch_size,
-        update_frequency=args.grpo_update_freq,
-    )
-    
-    config = config.Config(
-        use_api=args.use_api, 
-        api_model=args.api_model,
-        grpo_config=grpo_config
-    )
+    # Use HuggingFaceLLM instead of LocalLLM for local small model inference
+    class_config = config.ClassConfig(llm_class=sampler.HuggingFaceLLM, sandbox_class=evaluator.LocalSandbox)
+    config = config.Config(use_api = args.use_api, 
+                           api_model = args.api_model,
+                           hf_model = args.hf_model)
     global_max_sample_num = 10000 
 
     # Load prompt specification
