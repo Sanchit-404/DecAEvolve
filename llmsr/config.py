@@ -55,6 +55,9 @@ class Config:
        evaluate_timeout_seconds (int): Hypothesis evaluation timeout
        use_api (bool): API usage flag
        hf_model (str): Hugging Face model name for local inference
+       use_grpo (bool): Enable GRPO training
+       grpo_batch_size (int): Number of samples to collect before GRPO training
+       grpo_learning_rate (float): Learning rate for GRPO training
    """
     experience_buffer: ExperienceBufferConfig = dataclasses.field(default_factory=ExperienceBufferConfig)
     num_samplers: int = 1 
@@ -64,6 +67,9 @@ class Config:
     use_api: bool = False
     api_model: str = "gpt-3.5-turbo"
     hf_model: str = "microsoft/DialoGPT-medium"
+    use_grpo: bool = False
+    grpo_batch_size: int = 4
+    grpo_learning_rate: float = 2e-5
 
 
 @dataclasses.dataclass()

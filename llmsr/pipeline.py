@@ -88,13 +88,23 @@ def main(
     initial = template.get_function(function_to_evolve).body
     evaluators[0].analyse(initial, island_id=None, version_generated=None, profiler=profiler)
 
-    # Set global max sample nums.
-    samplers = [sampler.Sampler(database, evaluators, 
-                                config.samples_per_prompt, 
-                                max_sample_nums=max_sample_nums, 
-                                llm_class=class_config.llm_class,
-                                config = config) 
-                                for _ in range(config.num_samplers)]
+    # Set global max sample nums and configure samplers
+    if config.use_grpo and class_config.llm_class in (sampler.GRPOHuggingFaceLLM,):
+        # Use GRPO sampler for GRPO-enabled models
+        samplers = [sampler.GRPOSampler(database, evaluators, 
+                                        config.samples_per_prompt, 
+                                        max_sample_nums=max_sample_nums, 
+                                        llm_class=class_config.llm_class,
+                                        config = config) 
+                                        for _ in range(config.num_samplers)]
+    else:
+        # Use regular sampler
+        samplers = [sampler.Sampler(database, evaluators, 
+                                    config.samples_per_prompt, 
+                                    max_sample_nums=max_sample_nums, 
+                                    llm_class=class_config.llm_class,
+                                    config = config) 
+                                    for _ in range(config.num_samplers)]
 
     # This loop can be executed in parallel on remote sampler machines. As each
     # sampler enters an infinite loop, without parallelization only the first
