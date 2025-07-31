@@ -29,11 +29,15 @@ import json
 import http.client
 import os
 
-# New imports for Hugging Face integration
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+# Conditional imports to avoid dependency issues
+try:
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    print("Warning: Transformers not available. Install transformers to use HuggingFace models.")
 
-# GRPO imports
 try:
     from trl import GRPOConfig, GRPOTrainer
     from peft import LoraConfig, get_peft_model
@@ -74,7 +78,6 @@ class Sampler:
         self._samples_per_prompt = samples_per_prompt
         self._database = database
         self._evaluators = evaluators
-        # Pass model configuration to LLM class
         if llm_class == GRPOHuggingFaceLLM:
             self._llm = llm_class(samples_per_prompt, model_name=config.hf_model, 
                                   learning_rate=config.grpo_learning_rate)
@@ -96,7 +99,7 @@ class Sampler:
             prompt = self._database.get_prompt()
             
             reset_time = time.time()
-            samples = self._llm.draw_samples(prompt.code,self.config)
+            samples = self._llm.draw_samples(prompt.code, self.config)
             sample_time = (time.time() - reset_time) / self._samples_per_prompt
 
             # This loop can be executed in parallel on remote evaluator machines.
@@ -249,10 +252,6 @@ class GRPOSampler(Sampler):
             self._llm.train_with_grpo(self.training_data)
             # Clear training data after training
             self.training_data = []
-
-
-
-
 
 
 def _extract_body(sample: str, config: config_lib.Config) -> str:
@@ -484,7 +483,14 @@ class HuggingFaceLLM(LLM):
                 except ImportError:
                     pass  # If LlamaConfig not available, continue without it
                     
-            self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+            # Disable quantization on non-CUDA systems (like MacBook)
+            if torch.cuda.is_available():
+                self.model = AutoModelForCausalLM.from_pretrained(model_name, load_in_8bit=True, **model_kwargs)
+            else:
+                # Use float16 on MPS (Apple Silicon) or float32 on CPU for compatibility
+                model_kwargs['torch_dtype'] = torch.float16 if torch.backends.mps.is_available() else torch.float32
+                model_kwargs.pop('device_map', None)  # Remove device_map for CPU/MPS
+                self.model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
             
         except Exception as e:
             print(f"Failed to load {model_name}: {e}")
@@ -519,6 +525,15 @@ class HuggingFaceLLM(LLM):
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
             
+        # Move model to appropriate device
+        if not torch.cuda.is_available():
+            # For MacBook, use MPS if available, otherwise CPU
+            if torch.backends.mps.is_available():
+                self.device = torch.device("mps")
+            else:
+                self.device = torch.device("cpu")
+            self.model = self.model.to(self.device)
+        
         self.model.eval()
         print(f"Model loaded successfully on {self.device}")
 
@@ -569,8 +584,8 @@ class HuggingFaceLLM(LLM):
         # Generate using HuggingFace model
         inputs = self.tokenizer(content, return_tensors="pt", truncation=True, max_length=1024)
         
-        if torch.cuda.is_available():
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        # Move inputs to the same device as model (CUDA, MPS, or CPU)
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
         
         with torch.no_grad():
             if self._batch_inference:
@@ -660,6 +675,15 @@ class GRPOHuggingFaceLLM(HuggingFaceLLM):
     
     def _setup_grpo_trainer(self, learning_rate=2e-5):
         """Setup GRPO trainer configuration."""
+        # Configure optimizer based on available hardware
+        if torch.cuda.is_available():
+            optim = "adamw_8bit"
+            use_bf16 = True
+        else:
+            # Use standard AdamW for CPU/MPS compatibility
+            optim = "adamw_torch"
+            use_bf16 = False
+        
         self.grpo_config = GRPOConfig(
             output_dir="./grpo_checkpoints",
             learning_rate=learning_rate,
@@ -668,13 +692,14 @@ class GRPOHuggingFaceLLM(HuggingFaceLLM):
             max_prompt_length=512,
             max_completion_length=256,
             num_generations=4,  # GRPO requires at least 2, using 4 to match samples_per_prompt
-            optim="adamw_8bit",
+            optim=optim,
             num_train_epochs=1,
-            bf16=torch.cuda.is_available(),
+            bf16=use_bf16,
             remove_unused_columns=False,
             logging_steps=1,
             save_steps=100,
             dataloader_num_workers=0,  # Avoid multiprocessing issues
+            report_to=[],  # Disable wandb logging for MacBook compatibility
             greater_is_better=True,  # Higher reward is better
         )
         
@@ -757,7 +782,7 @@ class GRPOHuggingFaceLLM(HuggingFaceLLM):
                 reward_funcs=[reward_function],
                 args=self.grpo_config,
                 train_dataset=train_dataset,
-                tokenizer=self.tokenizer,
+                processing_class=self.tokenizer,
             )
             
             print("Starting GRPO training...")

@@ -54,6 +54,7 @@ class Config:
        samples_per_prompt (int): Number of hypotheses per prompt
        evaluate_timeout_seconds (int): Hypothesis evaluation timeout
        use_api (bool): API usage flag
+       api_model (str): API model name for external API calls
        hf_model (str): Hugging Face model name for local inference
        use_grpo (bool): Enable GRPO training
        grpo_batch_size (int): Number of samples to collect before GRPO training

@@ -9,6 +9,9 @@ Official Implementation of paper [LLM-SR: Scientific Equation Discovery via Prog
 
 
 ## Updates
+- **🚀 NEW: GRPO Test-Time Training** - Added support for Generalized Reward-based Policy Optimization (GRPO) that fine-tunes the LLM during search based on mathematical evaluation feedback
+- **💻 Cross-Platform Support** - Full compatibility with NVIDIA GPUs, Apple Silicon (M1/M2/M3), and CPU-only systems
+- **⚡ GPU Acceleration** - Optimized for CUDA with 8-bit/4-bit quantization, mixed precision training, and larger model support
 - Our recent more comprehensive benchmark [LLM-SRBench: A New Benchmark for Scientific Equation Discovery with Large Language Models](https://arxiv.org/abs/2504.10415) **(to appear at ICML 2025 as Oral)** is released following this work to effectively test LLM-based scientific equation discovery methods beyond memorization. Check out the benchmark data on [huggingface](https://huggingface.co/datasets/nnheui/llm-srbench) and evaluation codes [here](https://github.com/deep-symbolic-mathematics/llm-srbench).
 
 
@@ -38,6 +41,25 @@ conda activate llmsr
 
 Note: Requires Python ≥ 3.9
 
+### GPU Setup (Recommended)
+
+For optimal performance with larger models and faster training:
+
+```bash
+# Install CUDA-enabled PyTorch (if using NVIDIA GPU)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# Verify GPU setup
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+```
+
+### GRPO Dependencies
+
+For test-time training with GRPO, ensure these packages are installed:
+
+```bash
+pip install trl>=0.14.0 peft>=0.14.0 datasets>=3.2.0 accelerate>=1.9.0 bitsandbytes>=0.43.1
+```
 
 ## Datasets
 Benchmark datasets studied in this paper are provided in the [data/](./data) directory. For details on datasets and generation settings, please refer to [paper](https://arxiv.org/abs/2404.18400).
@@ -111,6 +133,64 @@ python main.py --use_api True \
 
 
 
+## GRPO Test-Time Training
+
+LLM-SR now supports **Generalized Reward-based Policy Optimization (GRPO)** for test-time training, where the LLM is fine-tuned during the search process based on mathematical evaluation feedback.
+
+### Quick Start
+
+```bash
+# Basic GRPO training
+python main.py --problem_name oscillator1 \
+               --spec_path ./specs/specification_oscillator1_numpy.txt \
+               --hf_model "microsoft/DialoGPT-medium" \
+               --use_grpo True \
+               --grpo_batch_size 4 \
+               --grpo_learning_rate 2e-5
+```
+
+### How GRPO Works
+
+1. **Sample Generation**: LLM generates equation candidates
+2. **Evaluation**: Equations are tested against scientific datasets 
+3. **Reward Calculation**: NMSE scores are converted to rewards (`reward = exp(-mse)`)
+4. **Model Update**: When batch size is reached, GRPO fine-tunes the LLM using LoRA
+5. **Improved Generation**: Updated model generates better equations in subsequent iterations
+
+### GRPO Parameters
+
+* `--use_grpo True`: Enables GRPO training (default: False)
+* `--grpo_batch_size`: Number of samples to collect before training (default: 4)
+* `--grpo_learning_rate`: Learning rate for GRPO updates (default: 2e-5)
+
+### Platform Support
+
+**GPU (Recommended):**
+```bash
+# Large models with quantization
+python main.py --use_grpo True --hf_model "mistralai/Mixtral-8x7B-Instruct-v0.1" --grpo_batch_size 8
+```
+
+**Apple Silicon (M1/M2/M3):**
+```bash
+# Automatically uses MPS acceleration
+python main.py --use_grpo True --hf_model "microsoft/DialoGPT-medium" --grpo_batch_size 4
+```
+
+**CPU Only:**
+```bash
+# Reduced batch size for CPU
+python main.py --use_grpo True --hf_model "distilgpt2" --grpo_batch_size 2
+```
+
+### Example Output
+
+```
+Training with GRPO on 4 samples...
+{'loss': 0.0045, 'learning_rate': 0.0001, 'reward': 0.8, 'kl': 0.449}
+GRPO training completed
+```
+
 ## Runs with Torch Hypothesis Optimizer
 
 Most specifications in [specs/](./specs) use equation program skeleton in `numpy` templates with `scipy BFGS` optimizer. LLM-SR can also leverage direct and differentiable optimizers for equation discovery. We provide specifications for the Oscillation 2 example using `torch` templates with `Adam` optimizer [here](./specs/specification_oscillator2_torch.txt).
@@ -121,6 +201,25 @@ Note: We observed slightly better performance from `numpy+BFGS` compared to `tor
 ## Configuration 
 
 The above commands use default pipeline parameters. To change parameters for experiments, refer to [config.py](./llmsr/config.py).
+
+### Key Configuration Parameters
+
+**Core LLM-SR Settings:**
+- `num_samplers`: Number of parallel samplers (default: 1)
+- `num_evaluators`: Number of parallel evaluators (default: 1) 
+- `samples_per_prompt`: Number of hypotheses per prompt (default: 4)
+- `evaluate_timeout_seconds`: Hypothesis evaluation timeout (default: 30)
+
+**GRPO Training Settings:**
+- `use_grpo`: Enable GRPO test-time training (default: False)
+- `grpo_batch_size`: Samples to collect before training (default: 4)
+- `grpo_learning_rate`: Learning rate for model updates (default: 2e-5)
+- `hf_model`: HuggingFace model identifier (default: "microsoft/DialoGPT-medium")
+
+**Experience Buffer Settings:**
+- `functions_per_prompt`: Previous solutions in prompts (default: 2)
+- `num_islands`: Population diversity islands (default: 10)
+- `reset_period`: Island reset frequency in seconds (default: 4 hours)
 
 
 

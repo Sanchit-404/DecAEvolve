@@ -93,17 +93,17 @@ def main(
         # Use GRPO sampler for GRPO-enabled models
         samplers = [sampler.GRPOSampler(database, evaluators, 
                                         config.samples_per_prompt, 
+                                        config,
                                         max_sample_nums=max_sample_nums, 
-                                        llm_class=class_config.llm_class,
-                                        config = config) 
+                                        llm_class=class_config.llm_class) 
                                         for _ in range(config.num_samplers)]
     else:
         # Use regular sampler
         samplers = [sampler.Sampler(database, evaluators, 
                                     config.samples_per_prompt, 
+                                    config,
                                     max_sample_nums=max_sample_nums, 
-                                    llm_class=class_config.llm_class,
-                                    config = config) 
+                                    llm_class=class_config.llm_class) 
                                     for _ in range(config.num_samplers)]
 
     # This loop can be executed in parallel on remote sampler machines. As each
