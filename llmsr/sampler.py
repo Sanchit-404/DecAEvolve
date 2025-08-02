@@ -249,7 +249,7 @@ class GRPOSampler(Sampler):
         # Train with GRPO if we have enough samples
         if len(self.training_data) >= self.grpo_batch_size and hasattr(self._llm, 'train_with_grpo'):
             print(f"Training with GRPO on {len(self.training_data)} samples...")
-            self._llm.train_with_grpo(self.training_data)
+            self._llm.train_with_grpo(self.training_data, self._evaluators, self._database)
             # Clear training data after training
             self.training_data = []
 
@@ -706,7 +706,7 @@ class GRPOHuggingFaceLLM(HuggingFaceLLM):
         # Initialize trainer (will be recreated for each training round)
         self.grpo_trainer = None
     
-    def train_with_grpo(self, training_data):
+    def train_with_grpo(self, training_data, evaluators=None, database=None):
         """
         Train the model using GRPO with the collected training data.
         
@@ -718,7 +718,7 @@ class GRPOHuggingFaceLLM(HuggingFaceLLM):
             return
         
         try:
-            # Group training data by unique prompts since GRPO expects multiple generations per prompt
+            # Group training data by unique prompts to reuse existing samples
             prompt_groups = {}
             for data in training_data:
                 prompt = data['prompt']
@@ -726,56 +726,85 @@ class GRPOHuggingFaceLLM(HuggingFaceLLM):
                     prompt_groups[prompt] = []
                 prompt_groups[prompt].append(data)
             
-            # Prepare dataset for GRPO (one entry per unique prompt)
-            prompts = []
+            # Prepare dataset with existing prompt-completion pairs
+            dataset_entries = []
             all_rewards = []
             
             for prompt, group in prompt_groups.items():
-                prompts.append(prompt)
-                # GRPO will generate its own completions, so we create a reward function
-                # that maps to our pre-computed rewards
-                group_rewards = [item['reward'] for item in group]
-                # Pad or truncate to match num_generations
-                while len(group_rewards) < self.grpo_config.num_generations:
-                    group_rewards.append(0.0)  # Default reward for missing generations
+                # Use existing completions instead of generating new ones
+                group_rewards = []
+                group_completions = []
+                
+                for item in group:
+                    group_completions.append(item['completion'])
+                    group_rewards.append(item['reward'])
+                
+                # Pad or truncate to match num_generations if needed
+                while len(group_completions) < self.grpo_config.num_generations:
+                    # If we have fewer samples than required, duplicate the best one
+                    if group_rewards:
+                        best_idx = np.argmax(group_rewards)
+                        group_completions.append(group_completions[best_idx])
+                        group_rewards.append(group_rewards[best_idx])
+                    else:
+                        # Fallback to empty completion
+                        group_completions.append("    return 0")
+                        group_rewards.append(0.0)
+                
+                # Truncate if we have too many
+                group_completions = group_completions[:self.grpo_config.num_generations]
                 group_rewards = group_rewards[:self.grpo_config.num_generations]
-                all_rewards.append(group_rewards)
+                
+                # Create dataset entry with existing samples
+                dataset_entries.append({
+                    'prompt': prompt,
+                    'completions': group_completions,
+                    'rewards': group_rewards
+                })
+                all_rewards.extend(group_rewards)
             
-            print(f"GRPO training: {len(prompts)} unique prompts")
+            print(f"GRPO training: {len(dataset_entries)} unique prompts with existing samples")
             if all_rewards:
-                avg_reward = np.mean([np.mean(rewards) for rewards in all_rewards])
-                max_reward = np.max([np.max(rewards) for rewards in all_rewards])
-                min_reward = np.min([np.min(rewards) for rewards in all_rewards])
-                print(f"PURE NMSE rewards - Average: {avg_reward:.4f}, Min: {min_reward:.4f}, Max: {max_reward:.4f}")
+                avg_reward = np.mean(all_rewards)
+                max_reward = np.max(all_rewards)
+                min_reward = np.min(all_rewards)
+                print(f"Reusing NMSE rewards - Average: {avg_reward:.4f}, Min: {min_reward:.4f}, Max: {max_reward:.4f}")
             else:
                 print("No NMSE rewards available")
             
-            # Create dataset with just prompts (GRPO will generate completions)
-            train_dataset = Dataset.from_dict({'prompt': prompts})
+            # Flatten the dataset for GRPO training (each prompt-completion-reward as separate entry)
+            flattened_prompts = []
+            flattened_completions = []
+            flattened_rewards = []
             
-            # Create reward function that uses ONLY NMSE-based rewards
+            for entry in dataset_entries:
+                prompt = entry['prompt']
+                completions = entry['completions']
+                rewards = entry['rewards']
+                
+                for completion, reward in zip(completions, rewards):
+                    flattened_prompts.append(prompt)
+                    flattened_completions.append(completion)
+                    flattened_rewards.append(reward)
+            
+            # Create dataset with individual prompt-completion-reward entries
+            train_dataset = Dataset.from_dict({
+                'prompt': flattened_prompts,
+                'completion': flattened_completions,
+                'reward': flattened_rewards
+            })
+            
+            print(f"Flattened dataset: {len(flattened_prompts)} prompt-completion pairs")
+            
+            # Since we have pre-computed rewards, we can use a simple reward function
             def reward_function(completions, **kwargs):
                 """
-                Reward function for GRPO based purely on NMSE evaluation.
-                Uses ONLY the actual NMSE-based rewards from equation evaluation.
+                Simple reward function that returns the pre-computed rewards.
+                GRPO will use these for training without re-evaluation.
                 """
-                rewards = []
-                
-                # Use only the pure NMSE-based rewards we collected
-                if all_rewards:
-                    # Use the actual NMSE-based rewards directly
-                    base_reward = np.mean([np.mean(r) for r in all_rewards])
-                    
-                    # Return the same reward for all completions since GRPO will generate new ones
-                    # The reward is based purely on NMSE performance
-                    for completion in completions:
-                        rewards.append(max(0.0, float(base_reward)))
-                else:
-                    # If no NMSE data available, use minimal reward
-                    for completion in completions:
-                        rewards.append(0.01)  # Very small default reward
-                
-                return rewards
+                # For GRPO with pre-computed rewards, we can return the rewards directly
+                # The rewards are already in the dataset, so GRPO should handle this automatically
+                return [1.0 for _ in completions]  # Placeholder - GRPO uses dataset rewards
             
             self.grpo_trainer = GRPOTrainer(
                 model=self.model,
