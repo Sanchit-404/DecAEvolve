@@ -143,7 +143,7 @@ LLM-SR now supports **Generalized Reward-based Policy Optimization (GRPO)** for 
 # Basic GRPO training
 python main.py --problem_name oscillator1 \
                --spec_path ./specs/specification_oscillator1_numpy.txt \
-               --hf_model "microsoft/DialoGPT-medium" \
+               --hf_model "Qwen/Qwen3-0.6B" \
                --use_grpo True \
                --grpo_batch_size 4 \
                --grpo_learning_rate 2e-5
@@ -174,7 +174,7 @@ python main.py --use_grpo True --hf_model "mistralai/Mixtral-8x7B-Instruct-v0.1"
 **Apple Silicon (M1/M2/M3):**
 ```bash
 # Automatically uses MPS acceleration
-python main.py --use_grpo True --hf_model "microsoft/DialoGPT-medium" --grpo_batch_size 4
+python main.py --use_grpo True --hf_model "meta-llama/Llama-3.2-1B-Instruct" --grpo_batch_size 4
 ```
 
 **CPU Only:**

@@ -59,18 +59,18 @@ class Config:
        use_grpo (bool): Enable GRPO training
        grpo_batch_size (int): Number of samples to collect before GRPO training
        grpo_learning_rate (float): Learning rate for GRPO training
+        use_offline_grpo (bool): Enable offline GRPO training mode
    """
     experience_buffer: ExperienceBufferConfig = dataclasses.field(default_factory=ExperienceBufferConfig)
     num_samplers: int = 1 
     num_evaluators: int = 1
-    samples_per_prompt: int = 4
+    samples_per_prompt: int = 8
     evaluate_timeout_seconds: int = 30  
     use_api: bool = False
     api_model: str = "gpt-3.5-turbo"
     hf_model: str = "microsoft/DialoGPT-medium"
-    use_grpo: bool = False
-    grpo_batch_size: int = 4
     grpo_learning_rate: float = 2e-5
+    use_offline_grpo: bool = False
 
 
 @dataclasses.dataclass()

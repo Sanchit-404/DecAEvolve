@@ -20,9 +20,8 @@ parser.add_argument('--log_path', type=str, default="./logs/oscillator1")
 parser.add_argument('--problem_name', type=str, default="oscillator1")
 parser.add_argument('--run_id', type=int, default=1)
 parser.add_argument('--hf_model', type=str, default="Qwen/Qwen3-1.5B-Instruct")
-parser.add_argument('--use_grpo', type=bool, default=False)
-parser.add_argument('--grpo_batch_size', type=int, default=4)
 parser.add_argument('--grpo_learning_rate', type=float, default=2e-5)
+parser.add_argument('--use_offline_grpo', type=bool, default=False)
 args = parser.parse_args()
 
 
@@ -30,10 +29,11 @@ args = parser.parse_args()
 
 if __name__ == '__main__':
     # Load config and parameters
-    # Choose LLM class based on GRPO flag
-    if args.use_grpo:
-        llm_class = sampler.GRPOHuggingFaceLLM
-        print("Using GRPO-enabled HuggingFace model for training")
+    # Choose LLM class based on GRPO flags
+    if args.use_offline_grpo:
+        from llmsr.offline_grpo_sampler import OfflineGRPOHuggingFaceLLM
+        llm_class = OfflineGRPOHuggingFaceLLM
+        print("Using Offline GRPO-enabled HuggingFace model for training")
     else:
         llm_class = sampler.HuggingFaceLLM
         print("Using standard HuggingFace model")
@@ -42,9 +42,8 @@ if __name__ == '__main__':
     config = config.Config(use_api = args.use_api, 
                            api_model = args.api_model,
                            hf_model = args.hf_model,
-                           use_grpo = args.use_grpo,
-                           grpo_batch_size = args.grpo_batch_size,
-                           grpo_learning_rate = args.grpo_learning_rate)
+                           grpo_learning_rate = args.grpo_learning_rate,
+                           use_offline_grpo = args.use_offline_grpo)
     global_max_sample_num = 10000 
 
     # Load prompt specification

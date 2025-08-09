@@ -22,7 +22,7 @@ import time
 from collections.abc import Sequence
 import copy
 from typing import Any, Type
-import profile
+from llmsr import profile
 import multiprocessing
 
 from llmsr import code_manipulation

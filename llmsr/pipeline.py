@@ -89,14 +89,19 @@ def main(
     evaluators[0].analyse(initial, island_id=None, version_generated=None, profiler=profiler)
 
     # Set global max sample nums and configure samplers
-    if config.use_grpo and class_config.llm_class in (sampler.GRPOHuggingFaceLLM,):
-        # Use GRPO sampler for GRPO-enabled models
-        samplers = [sampler.GRPOSampler(database, evaluators, 
+    # Import GRPO classes if needed
+    if config.use_offline_grpo:
+        from llmsr.offline_grpo_sampler import OfflineGRPOHuggingFaceLLM, OfflineGRPOSampler
+        
+    if config.use_offline_grpo and class_config.llm_class in (OfflineGRPOHuggingFaceLLM,):
+        # Use Offline GRPO sampler for offline GRPO-enabled models  
+        samplers = [OfflineGRPOSampler(database, evaluators, 
                                         config.samples_per_prompt, 
                                         config,
                                         max_sample_nums=max_sample_nums, 
                                         llm_class=class_config.llm_class) 
                                         for _ in range(config.num_samplers)]
+
     else:
         # Use regular sampler
         samplers = [sampler.Sampler(database, evaluators, 
@@ -111,3 +116,7 @@ def main(
     # sampler will do any work.
     for s in samplers:
         s.sample(profiler=profiler)
+        
+        # Finalize offline GRPO training if using offline mode
+        if config.use_offline_grpo and hasattr(s, 'finalize_training'):
+            s.finalize_training()
