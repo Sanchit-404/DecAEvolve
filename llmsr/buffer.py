@@ -222,6 +222,13 @@ class Island:
 
     def get_prompt(self) -> tuple[str, int]:
         """Constructs a prompt containing equation program skeletons from this island."""
+        # If functions_per_prompt is 0, return a prompt without any in-context examples
+        if self._functions_per_prompt == 0:
+            ## Parshin:
+            return self._generate_prompt_with_initial_example(), 1
+            # return self._generate_prompt_without_examples(), 1
+        
+        # Original logic for when functions_per_prompt > 0
         signatures = list(self._clusters.keys())
         cluster_scores = np.array(
             [self._clusters[signature].score for signature in signatures])
@@ -284,6 +291,52 @@ class Island:
 
         # Replace functions in the template with the list constructed here.
         prompt = dataclasses.replace(self._template, functions=versioned_functions)
+        
+        return str(prompt)
+
+
+    def _generate_prompt_with_initial_example(self) -> str:
+        """Create a prompt with only the initial example from the template, plus the function header to be completed."""
+        # Get the original function from the template to use as the initial example
+        original_function = self._template.get_function(self._function_to_evolve)
+        
+        # Create a copy of the original function as the initial example
+        initial_example = copy.deepcopy(original_function)
+        initial_example.name = f'{self._function_to_evolve}_v0'
+        initial_example.docstring = f'Initial example of {self._function_to_evolve}.'
+        
+        # Create the header function for the new function to be completed
+        new_function_name = f'{self._function_to_evolve}_v1'
+        header = dataclasses.replace(
+            original_function,
+            name=new_function_name,
+            body='',
+            docstring=f'Improved version of `{self._function_to_evolve}_v0`.',
+        )
+        
+        # Create a prompt with the initial example and the function header
+        prompt = dataclasses.replace(self._template, functions=[initial_example, header])
+        
+        return str(prompt)
+
+    def _generate_prompt_without_examples(self) -> str:
+        """Create a prompt without any in-context examples, only the function header to be completed."""
+        # Create a function header for the new function to be completed
+        new_function_name = f'{self._function_to_evolve}_v0'
+        
+        # Get the original function from the template to use as a base
+        original_function = self._template.get_function(self._function_to_evolve)
+        
+        # Create the header function with empty body
+        header = dataclasses.replace(
+            original_function,
+            name=new_function_name,
+            body='',
+            docstring=f'Implementation of {self._function_to_evolve}.',
+        )
+        
+        # Create a prompt with only the preface and the function header
+        prompt = dataclasses.replace(self._template, functions=[header])
         
         return str(prompt)
 

@@ -11,6 +11,8 @@ from llmsr import evaluator, buffer, config as config_lib
 from trl import GRPOConfig, GRPOTrainer
 from peft import LoraConfig, get_peft_model
 from datasets import Dataset
+from dataclasses import dataclass, field
+from accelerate import dispatch_model
 
 
 
@@ -28,7 +30,7 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
         """
         super().__init__(samples_per_prompt, model_name, batch_inference, trim)
         
-        self._setup_lora()
+        # self._setup_lora()
         # On Apple MPS, avoid float16 training instability
         try:
             if (not torch.cuda.is_available()) and torch.backends.mps.is_available():
@@ -40,56 +42,82 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
         
         self.offline_dataset = []
         self.training_episodes = 0
+        self.evaluators = None  # Will be set by sampler
         
         print("Offline GRPO-enabled HuggingFace model initialized successfully")
+    
+    def set_evaluators(self, evaluators):
+        """Set evaluators for reward computation during training."""
+        self.evaluators = evaluators
+        print(f"Set {len(evaluators)} evaluators for reward computation")
     
     def _setup_lora(self):
         """Setup LoRA configuration for efficient fine-tuning."""
         lora_config = LoraConfig(
             task_type="CAUSAL_LM",
-            r=16,
-            lora_alpha=32,
+            r=32,
+            lora_alpha=64,
             target_modules="all-linear",
-            lora_dropout=0.1,
+            lora_dropout=0.05,
+            use_rslora="True",
         )
         
         self.model = get_peft_model(self.model, lora_config)
     
     def _setup_grpo_trainer(self, learning_rate=2e-5):
         """Setup GRPO trainer configuration for offline training (version-compatible)."""
-        if torch.cuda.is_available():
-            optim = "adamw_8bit"
-            use_bf16 = True
-        else:
-            # Use standard AdamW for CPU/MPS compatibility
-            optim = "adamw_torch"
-            use_bf16 = False
+        # if torch.cuda.is_available():
+        #     optim = "adamw_8bit"
+        #     use_bf16 = True
+        # else:
+        #     # Use standard AdamW for CPU/MPS compatibility
+        #     optim = "adamw_torch"
+            # use_bf16 = False
         
         # Build kwargs and filter by GRPOConfig signature for compatibility across TRL versions
         import inspect
+        lr_scheduler_type: str = "warmup_stable_decay"
+        lr_scheduler_kwargs: dict[str, Any] = field(
+            default_factory=lambda: dict(num_warmup_steps=200, num_decay_steps=0, min_lr_ratio=0.0)
+        )
+        lr_scheduler_kwargs_dict = lr_scheduler_kwargs.default_factory()
+        token_entropy_percentile_threshold = 0.0 # from https://huggingface/papers/2506.01939
+        # loss_type = `bnpo` => helps remove length bias if per_device_train_batch_size > 1
+    
+        
         cfg_kwargs = {
             'output_dir': "./grpo_checkpoints",
             'learning_rate': learning_rate,
-            'per_device_train_batch_size': 8,
-            'gradient_accumulation_steps': 1,
+            'lr_scheduler_type': lr_scheduler_type,
+            'warmup_steps': lr_scheduler_kwargs_dict["num_warmup_steps"],
+            'lr_scheduler_kwargs': {k: v for k,v in lr_scheduler_kwargs_dict.items() if k != "num_warmup_steps"},
+            'mask_truncated_completions': False,
+            'temperature': 0.8,
+            'top_p': 0.9,
+            'use_liger_loss': (token_entropy_percentile_threshold == 0.0),
+            'per_device_train_batch_size': 16,  # Reduced for stability
+            'gradient_accumulation_steps': 4,
             'max_prompt_length': 512,
-            'max_completion_length': 256,
-            'num_generations': 8,
-            'optim': optim,
-            'num_train_epochs': 3,
-            'bf16': use_bf16,
-            'remove_unused_columns': False,
+            'max_completion_length': 512,
+            'num_generations': 64,  # Reduced to match batch size
             'logging_steps': 1,
-            'save_steps': 100,
+            'save_steps': 50,
             'dataloader_num_workers': 0,
-            'report_to': [],
             'greater_is_better': True,
             # Ensure finite training when dataloader has no length
-            'max_steps': 1,
-            'scale_rewards': False,
+            'max_steps': 500,
+            'scale_rewards': True,
             'max_grad_norm': 1.0,
-            'loss_type': 'dr_grpo',
-            'beta': 0.02,
+            'beta': 0.05,
+            'epsilon': 0.2,
+            'disable_dropout': True,
+            'report_to': "wandb",
+            #vllm
+            # 'use_vllm': True,
+            # 'vllm_host': "localhost",
+            # 'vllm_port': 8000,
+            # "vllm_mode": "colocate", 
+            # "vllm_server_timeout": 1200
         }
 
         sig = inspect.signature(GRPOConfig.__init__)
@@ -149,80 +177,407 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
         # Collapse excessive blank lines
         result = "\n".join(cleaned_lines)
         result = re.sub(r'\n{3,}', '\n\n', result)
+        result = "\n".join(("    " + l.strip() if l.strip() else "") for l in result.splitlines())
         # Hard cap lines to avoid pathological long bodies
         max_lines = 128
         result_lines = result.strip().splitlines()
         if len(result_lines) > max_lines:
             result_lines = result_lines[:max_lines]
-        return "\n".join(result_lines)
+        return "\n".join(("    " + l.strip() if l.strip() else "") for l in result_lines)
     
+
+    def _extract_body(self, sample: str) -> str:
+        """
+        Extract the first code block that represents the continuation/body of equation_v1
+        or the first function body. Always terminates immediately after the *first* actual
+        `return` statement (ignoring comments/strings/docstrings), and supports multi-line
+        returns.
+
+        Works whether or not the sample contains a `def ...` at all.
+        """
+        lines = sample.splitlines()
+        n = len(lines)
+
+        def find_func_start(_lines):
+            for i, line in enumerate(_lines):
+                s = line.lstrip()
+                if s.startswith("def "):
+                    return i
+            return None
+
+        def dedent_block(_lines):
+            nonempty = [l for l in _lines if l.strip()]
+            if not nonempty:
+                return _lines
+            min_indent = min(len(l) - len(l.lstrip()) for l in nonempty)
+            return [(l[min_indent:] if len(l) >= min_indent else l.lstrip()) for l in _lines]
+
+        def strip_trailing_blanks(_lines):
+            out = _lines[:]
+            while out and not out[-1].strip():
+                out.pop()
+            return out
+
+        # ---- Core: truncate after first real `return` (supports multiline) ----
+        def truncate_after_first_return(_lines):
+            in_triple = False
+            triple_delim = None
+            i = 0
+
+            def scan_string(line, j, quote):
+                esc = False
+                j += 1
+                L = len(line)
+                while j < L:
+                    ch = line[j]
+                    if ch == "\\" and not esc:
+                        esc = True
+                        j += 1
+                        continue
+                    if ch == quote and not esc:
+                        return j + 1
+                    esc = False
+                    j += 1
+                return L  # string continues to EOL (implicit close next line not tracked)
+
+            def net_bracket_delta(line, start_idx=0):
+                # Count ()[]{} ignoring strings/comments/triple strings
+                j = start_idx
+                L = len(line)
+                depth_delta = 0
+                in_str = False
+                str_q = None
+                nonlocal in_triple, triple_delim
+                while j < L:
+                    if in_triple:
+                        k = line.find(triple_delim, j)
+                        if k == -1:
+                            return depth_delta  # stays in triple
+                        in_triple = False
+                        j = k + 3
+                        continue
+
+                    ch = line[j]
+
+                    # triple quotes
+                    if j + 2 < L and (line[j:j+3] in ("'''", '"""')):
+                        in_triple = True
+                        triple_delim = line[j:j+3]
+                        j += 3
+                        continue
+
+                    # line comment
+                    if ch == "#":
+                        break
+
+                    # strings
+                    if not in_str and ch in ("'", '"'):
+                        j = scan_string(line, j, ch)
+                        continue
+
+                    if ch in "([{":
+                        depth_delta += 1
+                    elif ch in ")]}":
+                        depth_delta -= 1
+                    j += 1
+                return depth_delta
+
+            def is_return_token_here(line, j):
+                # word-boundary `return` not inside quotes/triple/comment
+                prev = line[j-1] if j > 0 else " "
+                nxt = line[j+6] if j + 6 < len(line) else ""
+                is_word = (not (prev.isalnum() or prev == "_")) and (nxt == "" or nxt.isspace() or nxt in "([{")
+                return is_word
+
+            while i < len(_lines):
+                line = _lines[i]
+                j = 0
+                L = len(line)
+                # scan line for first *real* return
+                in_str = False
+                # (we reuse triple/docstring state carried in outer vars)
+
+                while j < L:
+                    if in_triple:
+                        k = line.find(triple_delim, j)
+                        if k == -1:
+                            j = L
+                            break
+                        in_triple = False
+                        j = k + 3
+                        continue
+
+                    ch = line[j]
+
+                    # triple quotes
+                    if j + 2 < L and (line[j:j+3] in ("'''", '"""')):
+                        in_triple = True
+                        triple_delim = line[j:j+3]
+                        j += 3
+                        continue
+
+                    # comment
+                    if ch == "#":
+                        break
+
+                    # strings
+                    if ch in ("'", '"'):
+                        j = j + 1
+                        j = j if j >= L else (j + (0 if line[j-1] == ch else 0))  # fallthrough to scan below
+                        # use helper to skip full string
+                        def _skip_string(s, start, quote):
+                            esc = False
+                            k = start
+                            while k < len(s):
+                                c = s[k]
+                                if c == "\\" and not esc:
+                                    esc = True
+                                    k += 1
+                                    continue
+                                if c == quote and not esc:
+                                    return k + 1
+                                esc = False
+                                k += 1
+                            return k
+                        j = _skip_string(line, j-1, ch)
+                        continue
+
+                    # return keyword?
+                    if j + 6 <= L and line[j:j+6] == "return" and is_return_token_here(line, j):
+                        # include this line and then accumulate until the return expression ends
+                        kept = _lines[:i+1]
+                        # Start counting brackets after 'return'
+                        depth = net_bracket_delta(line, j + 6)
+                        # backslash continuation?
+                        cont = line.rstrip().endswith("\\")
+                        k = i
+                        while True:
+                            if depth == 0 and not cont and not in_triple:
+                                return kept  # done at this very line
+                            k += 1
+                            if k >= len(_lines):
+                                return kept  # EOF fallback
+                            next_line = _lines[k]
+                            kept.append(next_line)
+                            d = net_bracket_delta(next_line, 0)
+                            depth += d
+                            cont = next_line.rstrip().endswith("\\")
+                        # unreachable
+                    j += 1
+                i += 1
+
+            return _lines  # no return found
+
+        # ---------- Main extraction logic ----------
+        func_start = find_func_start(lines)
+
+        if func_start is None:
+            # No function found at all: treat entire sample as a continuation body and cut after first `return`
+            trimmed = truncate_after_first_return(lines)
+            # Drop entirely empty/comment/docstring-only leading stuff
+            # (keep non-empty, non-pure-comment, non-triple-quote delimiter lines)
+            cleaned = []
+            skip_triple = False
+            triple = None
+            for ln in trimmed:
+                s = ln.strip()
+                if skip_triple:
+                    if triple and triple in s:
+                        skip_triple = False
+                    continue
+                if s.startswith("'''") or s.startswith('"""'):
+                    triple = s[:3]
+                    if s.count(triple) < 2:
+                        skip_triple = True
+                    continue
+                if not s or s.startswith("#"):
+                    continue
+                cleaned.append(ln)
+            cleaned = strip_trailing_blanks(cleaned)
+            code = "\n".join(dedent_block(cleaned)).strip()
+            if not code:
+                return sample.strip()
+            code = "\n".join(("    " + l.strip() if l.strip() else "") for l in code.splitlines())
+            return code
+
+        # There is a function: first try to extract its body as before
+        # 1) find end of signature
+        sig_end = func_start
+        open_parens = 0
+        found_colon = False
+        for i in range(func_start, n):
+            line = lines[i]
+            open_parens += line.count("(") - line.count(")")
+            if ":" in line and open_parens <= 0:
+                sig_end = i
+                found_colon = True
+                break
+        if not found_colon:
+            return sample.strip()
+
+        # 2) collect body by indentation
+        body_lines = []
+        body_indent = None
+        for i in range(sig_end + 1, n):
+            line = lines[i]
+            if not line.strip() and not body_lines:
+                continue
+            if body_indent is None and line.strip():
+                body_indent = len(line) - len(line.lstrip())
+            if body_indent is not None and (len(line) - len(line.lstrip()) < body_indent) and line.strip():
+                break
+            if body_indent is not None:
+                body_lines.append(line)
+
+        body_lines = strip_trailing_blanks(body_lines)
+        if not body_lines:
+            return sample.strip()
+
+        dedented = [(l[body_indent:] if l.startswith(" " * body_indent) else l.lstrip()) if l.strip() else "" for l in body_lines]
+        dedented = strip_trailing_blanks(dedented)
+
+        # ✂️ terminate after first syntactic `return`
+        dedented = truncate_after_first_return(dedented)
+
+        code = "\n".join(dedented).strip()
+        if not code:
+            return sample.strip()
+        code = "\n".join(("    " + l.strip() if l.strip() else "") for l in code.splitlines())
+        return code
+
+
+    
+
+    # def prepare_offline_dataset(self) -> Dict[str, List]:
+    #     """
+    #     Prepare the collected LLM-SR samples into offline GRPO format.
+    #     Groups completions by prompt and organizes rewards accordingly.
+        
+    #     Returns:
+    #         Formatted dataset with prompts, completions, and rewards
+    #     """
+    #     if not self.offline_dataset:
+    #         print("No offline samples collected for training")
+    #         return {}
+        
+    #     # Group samples by prompt
+    #     prompt_groups = {}
+    #     for sample in self.offline_dataset:
+    #         prompt = sample['prompt']
+    #         instruction_prompt = ("You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. \
+    #                          You are given an example of the function signature in the first function below. \
+    #                          Your task is to complete the last 'equation' function with your mathematical relationship, considering the physical meaning and relationships of inputs. \
+    #                          Only complete the body of the current 'equation' function. Do NOT give me a new function. Just give me the new mathematical relationship in function body. Do NOT use equation_v0 in your implementation.\n\n \
+    #                          ")
+    #         prompt = '\n'.join([instruction_prompt, prompt])
+
+    #         if prompt not in prompt_groups:
+    #             prompt_groups[prompt] = {
+    #                 'completions': [],
+    #                 'rewards': []
+    #             }
+    #         prompt_groups[prompt]['completions'].append(sample['completion'])
+    #         prompt_groups[prompt]['rewards'].append(sample['reward'])
+        
+    #     # Format for offline GRPO training
+    #     # Note: TRL excludes 'prompt' and 'completion' from reward_kwargs, but NOT 'completions'
+    #     # So we use 'completion' (singular) to avoid conflicts
+    #     formatted_dataset = {
+    #         'prompt': [],
+    #         'completion': [],
+    #         'rewards': []
+    #     }
+        
+    #     for prompt, group_data in prompt_groups.items():
+    #         # Normalize completions to stripped strings for robust matching later
+    #         norm_completions = [str(c).strip() for c in group_data['completions']]
+    #         formatted_dataset['prompt'].append(prompt)
+    #         formatted_dataset['completion'].append(norm_completions)
+    #         formatted_dataset['rewards'].append(group_data['rewards'])
+        
+    #     print(f"Prepared offline dataset: {len(formatted_dataset['prompt'])} unique prompts")
+    #     print(f"Total samples: {len(self.offline_dataset)}")
+        
+    #     all_rewards = [reward for group_rewards in formatted_dataset['rewards'] for reward in group_rewards]
+    #     # if all_rewards:
+    #     #     print(f"Reward statistics - Mean: {np.mean(all_rewards):.4f}, "
+    #     #           f"Std: {np.std(all_rewards):.4f}, "
+    #     #           f"Min: {np.min(all_rewards):.4f}, "
+    #     #           f"Max: {np.max(all_rewards):.4f}")
+        
+    #     return formatted_dataset
+
+
     def prepare_offline_dataset(self) -> Dict[str, List]:
         """
         Prepare the collected LLM-SR samples into offline GRPO format.
         Groups completions by prompt and organizes rewards accordingly.
+        This function accumulates new samples across multiple calls.
         
         Returns:
             Formatted dataset with prompts, completions, and rewards
         """
         if not self.offline_dataset:
             print("No offline samples collected for training")
-            return {}
-        
-        # Group samples by prompt
-        prompt_groups = {}
+            return getattr(self, "formatted_dataset", {})
+
+        # Initialize if first time
+        if not hasattr(self, "formatted_dataset") or not self.formatted_dataset:
+            self.formatted_dataset = {
+                'prompt': [],
+                'completion': [],
+                'rewards': []
+            }
+
+        # Convert to dict for faster lookup
+        prompt_to_idx = {p: i for i, p in enumerate(self.formatted_dataset['prompt'])}
+
+        instruction_prompt = (
+            "You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. "
+            "You are given an example of the function signature in the first function below. "
+            "Your task is to complete the last 'equation' function with your mathematical relationship, "
+            "considering the physical meaning and relationships of inputs. "
+            "Only complete the body of the current 'equation' function. Do NOT give me a new function. "
+            "Just give me the new mathematical relationship in function body. "
+            "Do NOT use equation_v0 in your implementation.\n\n"
+        )
+
         for sample in self.offline_dataset:
-            prompt = sample['prompt']
-            if prompt not in prompt_groups:
-                prompt_groups[prompt] = {
-                    'completions': [],
-                    'rewards': []
-                }
-            prompt_groups[prompt]['completions'].append(sample['completion'])
-            prompt_groups[prompt]['rewards'].append(sample['reward'])
-        
-        # Format for offline GRPO training
-        # Note: TRL excludes 'prompt' and 'completion' from reward_kwargs, but NOT 'completions'
-        # So we use 'completion' (singular) to avoid conflicts
-        formatted_dataset = {
-            'prompt': [],
-            'completion': [],
-            'rewards': []
-        }
-        
-        for prompt, group_data in prompt_groups.items():
-            # Normalize completions to stripped strings for robust matching later
-            norm_completions = [str(c).strip() for c in group_data['completions']]
-            formatted_dataset['prompt'].append(prompt)
-            formatted_dataset['completion'].append(norm_completions)
-            formatted_dataset['rewards'].append(group_data['rewards'])
-        
-        print(f"Prepared offline dataset: {len(formatted_dataset['prompt'])} unique prompts")
-        print(f"Total samples: {len(self.offline_dataset)}")
-        
-        # PRINT DETAILED GRPO TRAINING INPUTS
-        print("\n=== GRPO TRAINING INPUTS ===")
-        for i, (prompt, completions, rewards) in enumerate(zip(formatted_dataset['prompt'], formatted_dataset['completion'], formatted_dataset['rewards'])):
-            print(f"\nPrompt {i+1}:")
-            print(f"  Prompt text: {prompt[:100]}..." if len(prompt) > 100 else f"  Prompt text: {prompt}")
-            print(f"  Number of completions: {len(completions)}")
-            for j, (completion, reward) in enumerate(zip(completions, rewards)):
-                print(f"    Completion {j+1}: '{completion.strip()}' → Reward: {reward:.6f}")
-        print("=== END GRPO TRAINING INPUTS ===\n")
-        
-        # Calculate reward statistics
-        all_rewards = [reward for group_rewards in formatted_dataset['rewards'] for reward in group_rewards]
+            prompt = '\n'.join([instruction_prompt, sample['prompt']])
+            completion = str(sample['completion']).strip()
+            reward = sample['reward']
+
+            if prompt in prompt_to_idx:
+                idx = prompt_to_idx[prompt]
+                # Avoid duplicate completions if already stored
+                if completion not in self.formatted_dataset['completion'][idx]:
+                    self.formatted_dataset['completion'][idx].append(completion)
+                    self.formatted_dataset['rewards'][idx].append(reward)
+            else:
+                # New prompt → add fresh entry
+                self.formatted_dataset['prompt'].append(prompt)
+                self.formatted_dataset['completion'].append([completion])
+                self.formatted_dataset['rewards'].append([reward])
+                prompt_to_idx[prompt] = len(self.formatted_dataset['prompt']) - 1
+
+        print(f"Prepared offline dataset: {len(self.formatted_dataset['prompt'])} unique prompts")
+        print(f"Total samples: {sum(len(c) for c in self.formatted_dataset['completion'])}")
+
+        all_rewards = [reward for group_rewards in self.formatted_dataset['rewards'] for reward in group_rewards]
         if all_rewards:
-            print(f"Reward statistics - Mean: {np.mean(all_rewards):.4f}, "
+            print(f"Offline - Reward statistics - Mean: {np.mean(all_rewards):.4f}, "
                   f"Std: {np.std(all_rewards):.4f}, "
                   f"Min: {np.min(all_rewards):.4f}, "
                   f"Max: {np.max(all_rewards):.4f}")
-        
-        return formatted_dataset
+
+        return self.formatted_dataset
+
+    
     
     def train_with_offline_grpo(self):
         """
         Train the model using offline GRPO with the collected LLM-SR samples.
-        This method follows the VikhrModels approach of using pre-computed samples.
+        This method uses a custom dataset format that works with default GRPOTrainer.
         """
         if not self.offline_dataset:
             print("No offline training data available for GRPO")
@@ -233,248 +588,235 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
         if not dataset:
             return
         
-        try:
-            print(f"Starting offline GRPO training episode {self.training_episodes + 1}...")
-            
-            # Ensure a fixed num_generations across all prompts: use the minimum available
-            effective_num_generations = min(len(c) for c in dataset['completion'])
-            if effective_num_generations < 1:
-                print("No completions available for offline GRPO")
-                return
-            # Slice each prompt's completions/rewards to the same length
-            for i in range(len(dataset['completion'])):
-                dataset['completion'][i] = dataset['completion'][i][:effective_num_generations]
-                dataset['rewards'][i] = dataset['rewards'][i][:effective_num_generations]
-            # Align GRPO expected num_generations and ensure non-zero effective batch sizing
-            try:
-                # Respect configured num_generations but do not exceed available completions
-                requested_generations = int(getattr(self.grpo_config, 'num_generations', effective_num_generations) or effective_num_generations)
-                final_num_generations = max(1, min(requested_generations, effective_num_generations))
-                self.grpo_config.num_generations = final_num_generations
-                # Ensure per_device_train_batch_size >= num_generations (use equal by default)
-                if hasattr(self.grpo_config, 'per_device_train_batch_size'):
-                    desired_pdbs = max(int(getattr(self.grpo_config, 'per_device_train_batch_size', final_num_generations)), final_num_generations)
-                    self.grpo_config.per_device_train_batch_size = desired_pdbs
-                # Extra guard for versions that derive internal batch_size via integer division
-                ng = getattr(self.grpo_config, 'num_generations', final_num_generations)
-                pdbs = getattr(self.grpo_config, 'per_device_train_batch_size', final_num_generations)
-                if ng and (pdbs // ng) == 0:
-                    self.grpo_config.per_device_train_batch_size = ng
-                # Ensure gradient_accumulation_steps is valid
-                if hasattr(self.grpo_config, 'gradient_accumulation_steps'):
-                    self.grpo_config.gradient_accumulation_steps = max(int(getattr(self.grpo_config, 'gradient_accumulation_steps', 1)), 1)
-            except Exception:
-                pass
-            print(f"Effective num_generations set to {getattr(self.grpo_config,'num_generations', None)}")
-            print(f"GRPO config: per_device_train_batch_size={getattr(self.grpo_config,'per_device_train_batch_size', None)}, num_generations={getattr(self.grpo_config,'num_generations', None)}")
-            
-            # Create custom dataset for offline training
-            train_dataset = Dataset.from_dict(dataset)
-            
-            # Prepare our LLM-SR samples for GRPO monkey-patching
-            # Group completions by prompt for easy lookup
-            self.precomputed_samples = {}
-            self.precomputed_rewards = {}
-            self.precomputed_ids = {}
+        # breakpoint()
+        
+        print(f"Starting offline GRPO training episode {self.training_episodes + 1}...")
+        
+        # For flattened dataset, we don't need to ensure fixed num_generations
+        # Just check if we have any data
+        if not dataset['completion'] or all(len(c) == 0 for c in dataset['completion']):
+            print("No completions available for offline GRPO")
+            return
+        
+        print(f"GRPO config: per_device_train_batch_size={getattr(self.grpo_config,'per_device_train_batch_size', None)}")
+        
+        # Create a custom dataset that works with default GRPOTrainer
+        # We need to flatten the dataset so each row contains one prompt-completion-reward triplet
+        flattened_dataset = {
+            'prompt': [],
+            'completion': [],
+            'reward': []
+        }
+        
+        for prompt, completions, rewards in zip(dataset['prompt'], dataset['completion'], dataset['rewards']):
+            for completion, reward in zip(completions, rewards):
+                flattened_dataset['prompt'].append(prompt)
+                flattened_dataset['completion'].append(completion)
+                flattened_dataset['reward'].append(reward)
+        
+        print(f"Flattened dataset: {len(flattened_dataset['prompt'])} total samples")
+        
 
-            # Cache EOS/PAD once
-            eos_id = self.tokenizer.eos_token_id
-            pad_id = self.tokenizer.pad_token_id
+        # Create custom dataset for offline training
+        train_dataset = Dataset.from_dict(flattened_dataset)
 
-            for prompt, completions, rewards in zip(dataset['prompt'], dataset['completion'], dataset['rewards']):
-                # Store normalized texts and rewards
-                norm_completions = [str(c).strip() for c in completions]
-                self.precomputed_samples[prompt] = norm_completions
-                self.precomputed_rewards[prompt] = rewards
-
-                # Pre-tokenize completion-only ids for exact matching PER prompt
-                ids_list = []
-                for comp in norm_completions:
-                    enc = self.tokenizer(comp, return_tensors="pt", add_special_tokens=False)
-                    ids = enc.input_ids[0].tolist()
-                    # Trim trailing eos/pad
-                    while ids and (ids[-1] == eos_id or (pad_id is not None and ids[-1] == pad_id)):
-                        ids.pop()
-                    ids_list.append(tuple(ids))
-                self.precomputed_ids[prompt] = ids_list
+        # breakpoint()
+        
+        # Create the reward function that looks up precomputed rewards
+        def llmsr_reward_function(prompts, completions, **kwargs):
+            print(f"=== LLMSR REWARD FUNCTION CALLED ===")
+            print(f"Prompts: {len(prompts)}, Completions: {len(completions)}")
             
-            print(f"GRPO setup: {len(self.precomputed_samples)} unique prompts with LLM-SR samples")
-            
-            # PRESERVE original model state before GRPO training
-            original_generate = self.model.generate
-            original_generation_config = getattr(self.model, 'generation_config', None)
-            sample_counter = 0  # Track which samples to return
-            # Will store rewards aligned with the last batch of generated completions
-            self._selected_rewards: List[float] = []
-            
-            def patched_generate(input_ids, **kwargs):
-                nonlocal sample_counter
+            rewards = []
+            for prompt, completion in zip(prompts, completions):
+                # Clean the completion to match our stored format
+                cleaned_completion = self._clean_completion_text(completion)
+                cleaned_completion = self._extract_body(cleaned_completion)
+                # breakpoint()
                 
-                # Decode the prompt to find our pre-computed samples
-                prompt_text = self.tokenizer.decode(input_ids[0], skip_special_tokens=True)
-                prompt_text = prompt_text.strip()
-                
-                # Find matching prompt in our precomputed samples
-                matching_prompt = None
-                for stored_prompt in self.precomputed_samples.keys():
-                    if stored_prompt.strip() in prompt_text or prompt_text in stored_prompt.strip():
-                        matching_prompt = stored_prompt
-                        break
-                
-                if matching_prompt and matching_prompt in self.precomputed_samples:
-                    # Use our LLM-SR samples instead of generating
-                    completions = self.precomputed_samples[matching_prompt]
+                # Compute the reward by evaluating the completion
+                try:
+                    # Create a temporary program by combining prompt and completion
+                    # Extract the function name from the prompt (assuming it ends with a function definition)
+                    prompt_lines = prompt.strip().split('\n')
+                    function_start = None
+                    for i, line in enumerate(prompt_lines):
+                        if line.strip().startswith('def '):
+                            function_start = i
+                            break
                     
-                    # GRPO expects multiple completions; always return requested by cycling
-                    requested = kwargs.get('num_return_sequences', getattr(self.grpo_config, 'num_generations', 16))
-                    num_generations = max(1, int(requested))
-                    selected_completions = []
-                    selected_rewards = []
-                    
-                    for i in range(num_generations):
-                        idx = (sample_counter + i) % max(1, len(completions))
-                        selected_completions.append(completions[idx])
-                        # Align reward selection with completion cycling
-                        selected_rewards.append(float(self.precomputed_rewards[matching_prompt][idx]))
-                    
-                    sample_counter += num_generations
-                    
-                    # Build completion-only ids and append to the given prompt ids
-                    target_device = next(self.model.parameters()).device
-                    base_prompt_ids = input_ids[0].to(target_device)
-                    max_comp_len = getattr(self.grpo_config, 'max_completion_length', 128)
-                    batch_outputs = []
-                    for completion in selected_completions:
-                        cleaned_completion = self._clean_completion_text(completion)
-                        comp_ids = self.tokenizer(cleaned_completion, return_tensors="pt", add_special_tokens=False).input_ids[0]
-                        comp_ids = comp_ids[:max_comp_len]
-                        out_ids = torch.cat([base_prompt_ids, comp_ids.to(target_device)], dim=0)
-                        batch_outputs.append(out_ids)
-                    # Pad to common length across batch with EOS for stacking
-                    eos_id = self.tokenizer.eos_token_id or self.tokenizer.pad_token_id
-                    max_len = max(seq.size(0) for seq in batch_outputs)
-                    padded_outputs = []
-                    for seq in batch_outputs:
-                        if seq.size(0) < max_len:
-                            pad_len = max_len - seq.size(0)
-                            padding = torch.full((pad_len,), eos_id, device=target_device, dtype=seq.dtype)
-                            seq = torch.cat([seq, padding], dim=0)
-                        padded_outputs.append(seq)
-                    result = torch.stack(padded_outputs, dim=0)
-                    # Store rewards for reward function to read back
-                    self._selected_rewards = selected_rewards
-                    print(f"Using LLM-SR samples: {len(selected_completions)} completions for prompt")
-                    return result
-                    
-                else:
-                    # Strict offline mode: never generate new samples; pull from any stored prompt
-                    if getattr(self, 'strict_offline', True) and len(self.precomputed_samples) > 0:
-                        any_prompt = next(iter(self.precomputed_samples.keys()))
-                        completions = self.precomputed_samples[any_prompt]
-                        requested = kwargs.get('num_return_sequences', getattr(self.grpo_config, 'num_generations', 16))
-                        num_generations = max(1, int(requested))
-                        selected_completions = []
-                        selected_rewards = []
-                        for i in range(num_generations):
-                            idx = (sample_counter + i) % max(1, len(completions))
-                            selected_completions.append(completions[idx])
-                            selected_rewards.append(float(self.precomputed_rewards[any_prompt][idx]))
-                        sample_counter += num_generations
-                        # Tokenize prompt+completion and return stacked ids
-                        batch_outputs = []
-                        for completion in selected_completions:
-                            eos = self.tokenizer.eos_token or ""
-                            full_text = (prompt_text + completion + (" " + eos if eos and not completion.strip().endswith(eos) else "")).strip()
-                            tokenized = self.tokenizer(full_text, return_tensors="pt", 
-                                                     max_length=kwargs.get('max_length', 512),
-                                                     truncation=True, padding=False)
-                            batch_outputs.append(tokenized.input_ids[0])
-                        max_len = max(len(seq) for seq in batch_outputs)
-                        padded_outputs = []
-                        target_device = next(self.model.parameters()).device
-                        for seq in batch_outputs:
-                            if len(seq) < max_len:
-                                pad_id = self.tokenizer.eos_token_id or self.tokenizer.pad_token_id
-                                padding = torch.full((max_len - len(seq),), pad_id, 
-                                                   device=target_device, dtype=seq.dtype)
-                                seq = torch.cat([seq.to(target_device), padding])
-                            else:
-                                seq = seq.to(target_device)
-                            padded_outputs.append(seq)
-                        result = torch.stack(padded_outputs).to(target_device)
-                        # Store rewards for reward function to read back
-                        self._selected_rewards = selected_rewards
-                        print("Strict offline: returning completions from stored LLM-SR samples")
-                        return result
+                    if function_start is not None:
+                        # Find the end of the function definition
+                        function_end = None
+                        for i in range(function_start + 1, len(prompt_lines)):
+                            if prompt_lines[i].strip() == '' or prompt_lines[i].startswith('def '):
+                                function_end = i
+                                break
+                        
+                        if function_end is None:
+                            function_end = len(prompt_lines)
+                        
+                        # Combine with the completion to create the full function
+                        full_function = '\n'.join(prompt_lines[function_start:]) + '\n' + cleaned_completion
+                        
+                        # Create a complete program for evaluation
+                        complete_program = '\n'.join(prompt_lines[:function_start]) + '\n' + full_function + '\n'
+                        
+                        
+                        # Use actual evaluators if available, otherwise fall back to heuristics
+                        if self.evaluators and len(self.evaluators) > 0:
+                            # Use the first evaluator for consistency
+                            chosen_evaluator = self.evaluators[0]
+                            
+                            # Create a mock database to capture scores
+                            class MockDatabase:
+                                def __init__(self):
+                                    self.scores_per_test = {}
+                                
+                                def register_program(self, program, island_id, scores_per_test, **kwargs):
+                                    self.scores_per_test = scores_per_test
+                            
+                            mock_db = MockDatabase()
+                            
+                            # Temporarily replace the evaluator's database
+                            original_db = chosen_evaluator._database
+                            chosen_evaluator._database = mock_db
+                            
+                            try:
+                                # Analyze the completion to get scores
+                                chosen_evaluator.analyse(
+                                    cleaned_completion,
+                                    "grpo_eval",  # Mock island_id
+                                    0,            # Mock version
+                                    global_sample_nums=0,
+                                    sample_time=0.0
+                                )
+                                
+                                # Extract scores from the mock database
+                                scores_per_test = mock_db.scores_per_test
+                                
+                                # Calculate score from test results (same logic as in sampler)
+                                if scores_per_test:
+                                    score = np.mean(list(scores_per_test.values()))
+                                    # The score from evaluator is -MSE
+                                    mse = -score
+                                    # breakpoint()
+                                    
+                                    # Use exponential decay for MSE to reward mapping (same as in sampler)
+                                    if mse is not None and not np.isnan(mse) and not np.isinf(mse):
+                                        reward = np.exp(-np.clip(abs(mse), 0, 10))  # Clip MSE to reasonable range
+                                    else:
+                                        reward = 0.01
+                                else:
+                                    # Failed evaluation gets a small floor reward
+                                    reward = 0.01
+                                    
+                            except Exception as e:
+                                print(f"Evaluation failed for completion: {e}")
+                                reward = 0.01
+                            finally:
+                                # Restore original database
+                                chosen_evaluator._database = original_db
+                        
                     else:
-                        # Fallback to original generation if prompt not found and not strict offline
-                        print(f"WARNING: Prompt not found in LLM-SR samples, using original generation")
-                        return original_generate(input_ids, **kwargs)
+                        # No function definition found, use default reward
+                        reward = 0.01
+                        
+                except Exception as e:
+                    print(f"Error computing reward for completion: {e}")
+                    reward = 0.01
+                
+                # Ensure reward is in valid range [0.01, 1.0]
+                # reward = max(0.01, min(1.0, float(reward)))
+                rewards.append(reward)
+                
+                print(f"Computed reward for completion: {reward:.6f}")
             
-            # Apply the monkey patch
-            self.model.generate = patched_generate
-            print("Monkey-patched model.generate to use LLM-SR samples")
             
-            # Create the proper reward function
-            def llmsr_reward_function(prompts, completions, **kwargs):
-                """
-                Real LLM-SR reward function using pre-computed rewards.
-                Return rewards aligned exactly to the last generated completions batch.
-                """
-                print(f"=== LLMSR REWARD FUNCTION CALLED ===")
-                print(f"Prompts: {len(prompts)}, Completions: {len(completions)}")
-                print(f"Additional kwargs: {list(kwargs.keys())}")
-                # If we have stored rewards aligned to generated completions, return them directly
-                if hasattr(self, '_selected_rewards') and self._selected_rewards:
-                    rewards = [float(r) for r in self._selected_rewards[:len(completions)]]
-                    # Ensure baseline floor
-                    rewards = [max(0.01, min(1.0, r)) for r in rewards]
-                    print(f"REAL LLM-SR rewards (direct aligned): {[f'{r:.4f}' for r in rewards]}")
-                    return rewards
-                # Fallback: return baseline rewards if no aligned list is available
-                print("WARNING: No aligned rewards found; returning baseline rewards")
-                return [0.01 for _ in range(len(completions))]
+            # Replace all 0.01 rewards with the minimum of the other (non-0.01) rewards, if any
+            # non_floor_rewards = [r for r in rewards if r != 0.01]
+            # if non_floor_rewards:
+            #     min_non_floor = min(non_floor_rewards)
+            #     rewards = [min_non_floor-0.1 if r == 0.01 else r for r in rewards]
+            print(f"LLM-SR rewards: {[f'{r:.4f}' for r in rewards]}")
+            print(f"Reward statistics - Mean: {np.mean(rewards):.4f}, "
+                  f"Std: {np.std(rewards):.4f}, "
+                  f"Min: {np.min(rewards):.4f}, "
+                  f"Max: {np.max(rewards):.4f}")
+            # INSERT_YOUR_CODE
+            # Write rewards and statistics to a log file for tracking over iterations
+            import os
+
+            log_dir = "./grpo_reward_logs"
+            os.makedirs(log_dir, exist_ok=True)
+            log_file = os.path.join(log_dir, "rewards_log.txt")
+
+            with open(log_file, "a") as f:
+                f.write(f"Episode {self.training_episodes}\n")
+                f.write(f"Rewards: {[f'{r:.4f}' for r in rewards]}\n")
+                f.write(f"Reward statistics - Mean: {np.mean(rewards):.4f}, "
+                        f"Std: {np.std(rewards):.4f}, "
+                        f"Min: {np.min(rewards):.4f}, "
+                        f"Max: {np.max(rewards):.4f}\n")
+                f.write("-" * 60 + "\n")
+            return rewards
+
+        try:
+            lora_cfg = LoraConfig(
+                r=8,
+                lora_alpha=16,
+                lora_dropout=0.05,
+                target_modules='all-linear',
+                use_rslora="True",
+            )
+
+            import os
+            os.environ["WANDB_PROJECT"] = f"llmsr-grpo-oscillator1-single-gpu"
+            self.grpo_config.run_name = f"{self.model_name}-r{lora_cfg.r}-g{getattr(self.grpo_config,'num_generations',4)}-{int(time.time())}"
 
             self.grpo_trainer = GRPOTrainer(
                 model=self.model,
+                # model = self.model_name,
                 reward_funcs=[llmsr_reward_function],
                 args=self.grpo_config,
                 train_dataset=train_dataset,
                 processing_class=self.tokenizer,
+                peft_config=lora_cfg,
             )
-            
             print("Starting GRPO training...")
             self.grpo_trainer.train()
             print("GRPO training completed")
-            
-            # CRITICAL: Restore original model state after training
-            self.model.generate = original_generate
-            if original_generation_config is not None:
-                self.model.generation_config = original_generation_config
-            print("Restored original model.generate method after GRPO training")
-            
-            # Set model to eval mode
-            self.model.eval()
-            print("Model set to evaluation mode")
-            
-            # Save the trained model
-            self.model.save_pretrained(f"./grpo_checkpoints/offline_episode_{self.training_episodes}")
-            
-            # Clear offline dataset after training
-            self.offline_dataset.clear()
-            self.training_episodes += 1
-            print(f"Offline training episode {self.training_episodes} completed")
-            
+
         except Exception as e:
             print(f"Error during offline GRPO training: {e}")
             import traceback
             traceback.print_exc()
-            
-            # Restore original model state even on failure
-            self.model.generate = original_generate
+        
+        finally:
+            # Clean up
+            self.grpo_trainer = None
             self.model.eval()
-            print("Model state restored after training failure")
+            print("Model set to evaluation mode")
+        
+        # Save the trained model
+        # self.model.save_pretrained(f"./grpo_checkpoints/offline_episode_{self.training_episodes}")
+        
+        # Clear offline dataset after training
+        self.offline_dataset.clear()
+        self.training_episodes += 1
+        print(f"Offline training episode {self.training_episodes} completed")
+            
+        # except Exception as e:
+        #     print(f"Error during offline GRPO training: {e}")
+        #     import traceback
+        #     traceback.print_exc()
+            
+        #     # Restore original model state even on failure
+        #     # self.model.generate = original_generate
+        #     self.model.eval()
+        #     print("Model state restored after training failure")
     
+
 
 class OfflineGRPOSampler(Sampler):
     """
@@ -501,10 +843,14 @@ class OfflineGRPOSampler(Sampler):
         
         if not isinstance(self._llm, OfflineGRPOHuggingFaceLLM):
             print("WARNING: OfflineGRPOSampler requires OfflineGRPOHuggingFaceLLM")
+        else:
+            # Pass evaluators to the LLM for reward computation
+            self._llm.set_evaluators(self._evaluators)
     
     def sample(self, **kwargs):
         """Sample with offline GRPO data collection."""
         while True:
+            
             if self._max_sample_nums and self.__class__._global_samples_nums >= self._max_sample_nums:
                 break
             
@@ -513,6 +859,7 @@ class OfflineGRPOSampler(Sampler):
             reset_time = time.time()
             samples = self._llm.draw_samples(prompt.code, self.config)
             sample_time = (time.time() - reset_time) / self._samples_per_prompt
+            # breakpoint()
 
             # Process each sample for offline training data collection
             for sample in samples:
@@ -573,46 +920,21 @@ class OfflineGRPOSampler(Sampler):
                         self._llm.offline_dataset = list(self._llm.offline_dataset[-n:])
                 except Exception:
                     pass
+                
                 print("Triggering offline GRPO training after this iteration...")
                 self._llm.train_with_offline_grpo()
+                
                 self.samples_since_training = 0
+
+                breakpoint()
     
+
     def _calculate_score_from_tests(self, scores_per_test):
         """Calculate the aggregate score from test scores."""
         if not scores_per_test:
             return 0.0
         return np.mean(list(scores_per_test.values()))
     
-    def _update_mse_history(self, mse: float) -> None:
-        """Append MSE to rolling history with a bounded size."""
-        if mse is None:
-            return
-        self.mse_history.append(float(mse))
-        if len(self.mse_history) > self._reward_history_maxlen:
-            self.mse_history.pop(0)
-    
-    def _reward_from_mse(self, mse: float) -> float:
-        """Compute log-normalized reward in [0, 1] from MSE with robust fallbacks."""
-        if mse is None:
-            return 0.01
-        if mse <= 0:
-            return 1.0
-        eps = 1e-12
-        history = self.mse_history + [float(mse)] if self.mse_history else [float(mse)]
-        if len(history) >= self._reward_min_history:
-            p10, p90 = np.percentile(history, [10, 90])
-            if p90 <= p10:
-                p90 = p10 * 1.0001 + eps
-            num = np.log10(p90 + eps) - np.log10(mse + eps)
-            den = np.log10(p90 + eps) - np.log10(p10 + eps)
-            reward = num / den
-            reward = float(np.clip(reward, 0.0, 1.0))
-        else:
-            c = float(np.median(history)) + eps
-            alpha = 0.5
-            reward = 1.0 / (1.0 + (mse / c) ** alpha)
-            reward = float(np.clip(reward, 0.0, 1.0))
-        return reward
     
     def _collect_offline_sample(self, sample_key: str):
         """Collect a sample for offline GRPO training."""
@@ -624,8 +946,15 @@ class OfflineGRPOSampler(Sampler):
                 # The score from evaluator is -MSE
                 mse = -score
                 # Update history then compute log-normalized reward
-                self._update_mse_history(mse)
-                reward = self._reward_from_mse(mse)
+                # self._update_mse_history(mse)
+                # reward = self._reward_from_mse(mse)
+                if mse is not None and not np.isnan(mse) and not np.isinf(mse):
+                    # Use exponential decay for MSE to reward mapping
+                    reward = np.exp(-np.clip(abs(mse), 0, 10))  # Clip MSE to reasonable range
+                else:
+                    reward = 0.01
+                # Ensure reward is in valid range [0.01, 1.0]
+                # reward = np.clip(float(reward), 0.01, 1.0)
                 print(f"Collected offline sample: MSE={mse:.6e}, Score={score:.6e}, Reward={reward:.6f}")
             else:
                 # Failed evaluation gets a small floor reward

@@ -14,14 +14,15 @@ from llmsr import evaluator
 parser = ArgumentParser()
 parser.add_argument('--port', type=int, default=None)
 parser.add_argument('--use_api', type=bool, default=False)
-parser.add_argument('--api_model', type=str, default="gpt-3.5-turbo")
+parser.add_argument('--api_model', type=str, default="gpt-4o-mini")
 parser.add_argument('--spec_path', type=str)
 parser.add_argument('--log_path', type=str, default="./logs/oscillator1")
 parser.add_argument('--problem_name', type=str, default="oscillator1")
 parser.add_argument('--run_id', type=int, default=1)
-parser.add_argument('--hf_model', type=str, default="Qwen/Qwen3-1.5B-Instruct")
-parser.add_argument('--grpo_learning_rate', type=float, default=2e-5)
+parser.add_argument('--hf_model', type=str, default="Qwen/Qwen2.5-1.5B-Instruct")
+parser.add_argument('--grpo_learning_rate', type=float, default=1e-6)
 parser.add_argument('--use_offline_grpo', type=bool, default=False)
+parser.add_argument('--use_wandb', type=bool, default=True)
 args = parser.parse_args()
 
 
@@ -74,4 +75,5 @@ if __name__ == '__main__':
         class_config=class_config,
         # log_dir = 'logs/m1jobs-mixtral-v10',
         log_dir=args.log_path,
+        use_wandb=args.use_wandb,
     )

@@ -1,0 +1,650 @@
+# Copyright 2023 DeepMind Technologies Limited
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+""" Class for sampling new program skeletons. """
+from __future__ import annotations
+from abc import ABC, abstractmethod
+
+from typing import Collection, Sequence, Type
+import numpy as np
+import time
+
+from llmsr import evaluator
+from llmsr import buffer
+from llmsr import config as config_lib
+import requests
+import json
+import http.client
+import os
+
+# Conditional imports to avoid dependency issues
+try:
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+    from accelerate import Accelerator, infer_auto_device_map, init_empty_weights
+    from accelerate.utils import get_balanced_memory
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+    print("Warning: Transformers not available. Install transformers to use HuggingFace models.")
+
+# GRPO imports moved to grpo_sampler.py
+
+
+class LLM(ABC):
+    def __init__(self, samples_per_prompt: int) -> None:
+        self._samples_per_prompt = samples_per_prompt
+
+    def _draw_sample(self, prompt: str) -> str:
+        """ Return a predicted continuation of `prompt`."""
+        raise NotImplementedError('Must provide a language model.')
+
+    @abstractmethod
+    def draw_samples(self, prompt: str) -> Collection[str]:
+        """ Return multiple predicted continuations of `prompt`. """
+        return [self._draw_sample(prompt) for _ in range(self._samples_per_prompt)]
+
+
+class Sampler:
+    """ Node that samples program skeleton continuations and sends them for analysis. """
+    _global_samples_nums: int = 1 
+
+    def __init__(
+            self,
+            database: buffer.ExperienceBuffer,
+            evaluators: Sequence[evaluator.Evaluator],
+            samples_per_prompt: int,
+            config: config_lib.Config,
+            max_sample_nums: int | None = None,
+            llm_class: Type[LLM] = LLM,
+    ):
+        self._samples_per_prompt = samples_per_prompt
+        self._database = database
+        self._evaluators = evaluators
+        # Import GRPO class only if needed
+        try:
+            from .grpo_sampler import GRPOHuggingFaceLLM
+            grpo_available = True
+        except ImportError:
+            grpo_available = False
+            
+        if grpo_available and llm_class.__name__ == 'GRPOHuggingFaceLLM':
+            self._llm = llm_class(samples_per_prompt, model_name=config.hf_model, 
+                                  learning_rate=config.grpo_learning_rate)
+        elif llm_class == HuggingFaceLLM:
+            self._llm = llm_class(samples_per_prompt, model_name=config.hf_model)
+        elif llm_class.__name__ == 'OfflineGRPOHuggingFaceLLM':
+            try:
+                self._llm = llm_class(samples_per_prompt, model_name=config.hf_model)
+            except TypeError:
+                self._llm = llm_class(samples_per_prompt)
+        else:
+            self._llm = llm_class(samples_per_prompt)
+        self._max_sample_nums = max_sample_nums
+        self.config = config
+
+    
+    def sample(self, **kwargs):
+        """ Continuously gets prompts, samples programs, sends them for analysis. """
+        while True:
+            # stop the search process if hit global max sample nums
+            if self._max_sample_nums and self.__class__._global_samples_nums >= self._max_sample_nums:
+                break
+            
+            prompt = self._database.get_prompt()
+            
+            reset_time = time.time()
+            samples = self._llm.draw_samples(prompt.code, self.config)
+            sample_time = (time.time() - reset_time) / self._samples_per_prompt
+
+            # This loop can be executed in parallel on remote evaluator machines.
+            for sample in samples:
+                self._global_sample_nums_plus_one()
+                cur_global_sample_nums = self._get_global_sample_nums()
+                chosen_evaluator: evaluator.Evaluator = np.random.choice(self._evaluators)
+                chosen_evaluator.analyse(
+                    sample,
+                    prompt.island_id,
+                    prompt.version_generated,
+                    **kwargs,
+                    global_sample_nums=cur_global_sample_nums,
+                    sample_time=sample_time
+                )
+
+    def _get_global_sample_nums(self) -> int:
+        return self.__class__._global_samples_nums
+
+    def set_global_sample_nums(self, num):
+        self.__class__._global_samples_nums = num
+
+    def _global_sample_nums_plus_one(self):
+        self.__class__._global_samples_nums += 1
+
+
+# GRPOSampler moved to grpo_sampler.py
+
+
+import re
+from typing import Optional
+
+def _extract_body(sample: str, config: "config_lib.Config") -> str:
+    """
+    Robustly extract the function body from a response sample, handling decorators,
+    multi-line signatures, and various indentation styles. Returns only the function body,
+    properly dedented, or the original sample if no function is found.
+
+    Args:
+        sample: The raw LLM response as a string.
+        config: Configuration object (must have .use_api attribute).
+
+    Returns:
+        The extracted function body as a string, or the original sample if no function found.
+    """
+    lines = sample.splitlines()
+    n = len(lines)
+    func_start = None
+    func_end = None
+
+    # Helper: Find the first function definition (optionally after decorators)
+    def find_func_start(lines):
+        in_decorator = False
+        for i, line in enumerate(lines):
+            stripped = line.lstrip()
+            if not stripped:
+                continue
+            if stripped.startswith("@"):
+                in_decorator = True
+                continue
+            if stripped.startswith("def "):
+                return i
+        return None
+
+    func_start = find_func_start(lines)
+    if func_start is None:
+        # No function found, return original sample
+        return sample.strip()
+
+    # Find the end of the function signature (handles multi-line signatures)
+    sig_end = func_start
+    open_parens = 0
+    found_colon = False
+    for i in range(func_start, n):
+        line = lines[i]
+        open_parens += line.count("(") - line.count(")")
+        if ":" in line and open_parens <= 0:
+            sig_end = i
+            found_colon = True
+            break
+    if not found_colon:
+        # Malformed function, return original sample
+        return sample.strip()
+
+    # Determine indentation of the function body
+    body_lines = []
+    body_indent: Optional[int] = None
+    for i in range(sig_end + 1, n):
+        line = lines[i]
+        # Skip empty lines after signature
+        if not line.strip() and not body_lines:
+            continue
+        # Find the first non-empty line to determine indentation
+        if body_indent is None and line.strip():
+            body_indent = len(line) - len(line.lstrip())
+        # If indentation is less than body_indent, function body ends
+        if body_indent is not None and (len(line) - len(line.lstrip()) < body_indent) and line.strip():
+            break
+        # Only include lines that are part of the function body (including blank lines)
+        if body_indent is not None:
+            body_lines.append(line)
+    # Remove trailing blank lines
+    while body_lines and not body_lines[-1].strip():
+        body_lines.pop()
+
+    # Dedent the function body
+    if body_lines and body_indent is not None:
+        dedented = []
+        for l in body_lines:
+            if l.strip():
+                dedented.append(l[body_indent:] if l.startswith(" " * body_indent) else l.lstrip())
+            else:
+                dedented.append("")
+        code = "\n".join(dedented)
+    else:
+        code = ""
+
+    # If config.use_api, do not re-indent; else, optionally re-indent (legacy behavior)
+    if not code and config.use_api:
+        return ""
+    if not code:
+        return sample.strip()
+    if not config.use_api:
+        # Optionally re-indent to 4 spaces (legacy behavior)
+        code = "\n".join(("    " + l if l.strip() else "") for l in code.splitlines())
+    return code
+
+
+
+class LocalLLM(LLM):
+    def __init__(self, samples_per_prompt: int, batch_inference: bool = True, trim=True) -> None:
+        """
+        Args:
+            batch_inference: Use batch inference when sample equation program skeletons. The batch size equals to the samples_per_prompt.
+        """
+        super().__init__(samples_per_prompt)
+
+        url = "http://127.0.0.1:5000/completions"
+        instruction_prompt = ("You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. \
+                             Complete the 'equation' function below with mathematical structure, considering the physical meaning and relationships of inputs.\n\n")
+        self._batch_inference = batch_inference
+        self._url = url
+        self._instruction_prompt = instruction_prompt
+        self._trim = trim
+
+
+    def draw_samples(self, prompt: str, config: config_lib.Config) -> Collection[str]:
+        """Returns multiple equation program skeleton hypotheses for the given `prompt`."""
+        if config.use_api:
+            return self._draw_samples_api(prompt, config)
+        else:
+            return self._draw_samples_local(prompt, config)
+
+
+    def _draw_samples_local(self, prompt: str, config: config_lib.Config) -> Collection[str]:    
+        # instruction
+        prompt = '\n'.join([self._instruction_prompt, prompt])
+        while True:
+            try:
+                all_samples = []
+                # response from llm server
+                if self._batch_inference:
+                    response = self._do_request(prompt)
+                    for res in response:
+                        all_samples.append(res)
+                else:
+                    for _ in range(self._samples_per_prompt):
+                        response = self._do_request(prompt)
+                        all_samples.append(response)
+
+                # trim equation program skeleton body from samples
+                if self._trim:
+                    all_samples = [_extract_body(sample, config) for sample in all_samples]
+                
+                return all_samples
+            except Exception:
+                continue
+
+
+    def _draw_samples_api(self, prompt: str, config: config_lib.Config) -> Collection[str]:
+        all_samples = []
+        prompt = '\n'.join([self._instruction_prompt, prompt])
+        
+        for _ in range(self._samples_per_prompt):
+            while True:
+                try:
+                    conn = http.client.HTTPSConnection("api.openai.com")
+                    payload = json.dumps({
+                        "max_tokens": 512,
+                        "model": config.api_model,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ]
+                    })
+                    headers = {
+                        'Authorization': f"Bearer {os.environ['API_KEY']}",
+                        'User-Agent': 'Apifox/1.0.0 (https://apifox.com)',
+                        'Content-Type': 'application/json'
+                    }
+                    conn.request("POST", "/v1/chat/completions", payload, headers)
+                    res = conn.getresponse()
+                    data = json.loads(res.read().decode("utf-8"))
+                    response = data['choices'][0]['message']['content']
+                    
+                    if self._trim:
+                        response = _extract_body(response, config)
+                    
+                    all_samples.append(response)
+                    break
+
+                except Exception:
+                    continue
+        
+        return all_samples
+    
+    
+    def _do_request(self, content: str) -> str:
+        content = content.strip('\n').strip()
+        # repeat the prompt for batch inference
+        repeat_prompt: int = self._samples_per_prompt if self._batch_inference else 1
+        
+        data = {
+            'prompt': content,
+            'repeat_prompt': repeat_prompt,
+            'params': {
+                'do_sample': True,
+                'temperature': None,
+                'top_k': None,
+                'top_p': None,
+                'add_special_tokens': False,
+                'skip_special_tokens': True,
+            }
+        }
+        
+        headers = {'Content-Type': 'application/json'}
+        response = requests.post(self._url, data=json.dumps(data), headers=headers)
+        
+        if response.status_code == 200: #Server status code 200 indicates successful HTTP request! 
+            response = response.json()["content"]
+            
+            return response if self._batch_inference else response[0]
+
+
+class HuggingFaceLLM(LLM):
+    def __init__(self, samples_per_prompt: int, model_name: str = None, 
+                 batch_inference: bool = True, trim: bool = True, 
+                 use_multi_gpu: bool = True, max_memory: dict = None) -> None:
+        """
+        Hugging Face model for equation generation with multi-GPU support.
+        
+        Args:
+            samples_per_prompt: Number of samples to generate per prompt
+            model_name: Hugging Face model identifier
+            batch_inference: Use batch inference when sampling
+            trim: Whether to trim the response to extract equation body
+            use_multi_gpu: Whether to use multiple GPUs with accelerate
+            max_memory: Dictionary specifying max memory per device (e.g., {0: "24GB", 1: "24GB"})
+        """
+        super().__init__(samples_per_prompt)
+        
+        # Default model if none specified (no fallbacks)
+        if model_name is None:
+            model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+            
+        self.model_name = model_name
+        self._batch_inference = batch_inference
+        self._trim = trim
+        self.use_multi_gpu = use_multi_gpu
+        
+        # Instruction prompt - exactly like LocalLLM
+        # instruction_prompt = f"""
+        #         You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. \
+        #         Your task is to find the mathematical function skeleton that represents acceleration, given data on position and velocity.
+
+        #         Here's the function signature you should use:
+
+        #         ```python
+        #         import numpy as np
+
+        #         MAX_NPARAMS = 10
+        #         params = [1.0]*MAX_NPARAMS
+
+        #         def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+        #             \"\"\" Mathematical function for acceleration in a damped nonlinear oscillator
+                    
+        #             Args:
+        #                 x: A numpy array representing observations of current position.
+        #                 v: A numpy array representing observations of velocity.
+        #                 params: Array of numeric constants or parameters to be optimized
+                    
+        #             Returns:
+        #                 A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+        #             \"\"\"
+        #             # TODO: Implement the mathematical relationship here""" + \
+        #             "# Example: dv_dt = params[0] * x + params[1] * v + params[2]" + \
+        #             """# Replace with your discovered equation
+                    
+        #             return dv_dt
+        #         ```
+
+        #         Please provide only the Python function implementation. Consider the physical meaning and relationships of inputs in finding the mathematical relations between variables.
+        #         """
+        
+        instruction_prompt = ("You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. \
+                             You are given an example of the function signature in the first function below. \
+                             Your task is to complete the last 'equation' function with your mathematical relationship, considering the physical meaning and relationships of inputs. \
+                             Only complete the body of the current 'equation' function. Do NOT give me a new function. Just give me the new mathematical relationship in function body. Do NOT use equation_v0 in your implementation.\n\n \
+                             ")
+        
+        self._instruction_prompt = instruction_prompt
+        
+        # Load model and tokenizer with multi-GPU support
+        print(f"Loading model: {model_name}")
+        self._load_model_with_accelerate(max_memory)
+        
+        # Set pad token if not exists
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        
+        self.model.eval()
+        print(f"Model loaded successfully with multi-GPU support")
+    
+    def _load_model_with_accelerate(self, max_memory: dict = None):
+        """Load model using accelerate for optimal multi-GPU distribution."""
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            
+            # Check available GPUs
+            num_gpus = torch.cuda.device_count()
+            print(f"Available GPUs: {num_gpus}")
+            
+            if num_gpus > 1 and self.use_multi_gpu:
+                print("Setting up multi-GPU model loading with accelerate...")
+                
+                # Auto-detect memory if not specified
+                if max_memory is None:
+                    max_memory = {}
+                    for i in range(num_gpus):
+                        gpu_memory = torch.cuda.get_device_properties(i).total_memory
+                        # Reserve some memory for other operations (80% of total)
+                        max_memory[i] = f"{int(gpu_memory * 0.95 / 1024**3)}GB"
+                    print(f"Auto-detected memory allocation: {max_memory}")
+                
+                # Model loading configuration for multi-GPU
+                model_kwargs = {
+                    'torch_dtype': torch.float16,
+                    'trust_remote_code': True,
+                    'device_map': 'auto',
+                    'max_memory': max_memory,
+                    'offload_folder': 'offload',  # For CPU offloading if needed
+                }
+                
+                # Special handling for LLaMA models with rope_scaling issues
+                if 'llama' in self.model_name.lower():
+                    try:
+                        from transformers import LlamaConfig
+                        config = LlamaConfig.from_pretrained(self.model_name)
+                        if hasattr(config, 'rope_scaling') and config.rope_scaling is not None:
+                            if isinstance(config.rope_scaling, dict) and 'rope_type' in config.rope_scaling:
+                                config.rope_scaling = {
+                                    'type': config.rope_scaling.get('rope_type', 'linear'),
+                                    'factor': config.rope_scaling.get('factor', 1.0)
+                                }
+                        model_kwargs['config'] = config
+                    except ImportError:
+                        pass
+                
+                # Load model with accelerate
+                self.model = AutoModelForCausalLM.from_pretrained(self.model_name, **model_kwargs)
+                
+                # Initialize accelerator for training
+                self.accelerator = Accelerator(
+                    mixed_precision='fp16',
+                    gradient_accumulation_steps=4,
+                )
+                
+                print(f"Model distributed across {num_gpus} GPUs")
+                print(f"Device map: {self.model.hf_device_map if hasattr(self.model, 'hf_device_map') else 'auto'}")
+                
+            else:
+                # Single GPU or CPU fallback
+                print("Using single GPU or CPU setup...")
+                self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                
+                model_kwargs = {
+                    'torch_dtype': torch.float16 if torch.cuda.is_available() else torch.float32,
+                    'trust_remote_code': True,
+                }
+                
+                # Special handling for LLaMA models
+                if 'llama' in self.model_name.lower():
+                    try:
+                        from transformers import LlamaConfig
+                        config = LlamaConfig.from_pretrained(self.model_name)
+                        if hasattr(config, 'rope_scaling') and config.rope_scaling is not None:
+                            if isinstance(config.rope_scaling, dict) and 'rope_type' in config.rope_scaling:
+                                config.rope_scaling = {
+                                    'type': config.rope_scaling.get('rope_type', 'linear'),
+                                    'factor': config.rope_scaling.get('factor', 1.0)
+                                }
+                        model_kwargs['config'] = config
+                    except ImportError:
+                        pass
+                
+                if torch.cuda.is_available():
+                    self.model = AutoModelForCausalLM.from_pretrained(self.model_name, **model_kwargs)
+                else:
+                    model_kwargs['torch_dtype'] = torch.float16 if torch.backends.mps.is_available() else torch.float32
+                    self.model = AutoModelForCausalLM.from_pretrained(self.model_name, **model_kwargs)
+                    
+                
+                # Move model to appropriate device
+                if not torch.cuda.is_available():
+                    if torch.backends.mps.is_available():
+                        self.device = torch.device("mps")
+                    else:
+                        self.device = torch.device("cpu")
+                    self.model = self.model.to(self.device)
+                
+                # Initialize accelerator for single GPU
+                self.accelerator = Accelerator(
+                    mixed_precision='fp16' if torch.cuda.is_available() else 'no',
+                    gradient_accumulation_steps=4,
+                )
+                
+        except Exception as e:
+            raise RuntimeError(f"Failed to load specified model '{self.model_name}': {e}")
+    
+    
+    def get_device_for_inputs(self, inputs):
+        """Get the appropriate device for inputs based on model distribution."""
+        if hasattr(self.model, 'hf_device_map'):
+            # Multi-GPU setup - inputs go to the first GPU
+            return torch.device(f"cuda:0")
+        else:
+            # Single GPU or CPU setup
+            return self.device if hasattr(self, 'device') else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    def draw_samples(self, prompt: str, config: config_lib.Config) -> Collection[str]:
+        """Returns multiple equation program skeleton hypotheses for the given `prompt`."""
+        if config.use_api:
+            return self._draw_samples_api(prompt, config)
+        else:
+            return self._draw_samples_local(prompt, config)
+
+    def _draw_samples_local(self, prompt: str, config: config_lib.Config) -> Collection[str]:
+        """Local sampling method - matches LocalLLM structure exactly."""
+        # instruction - exactly like LocalLLM
+        # if config.use_offline_grpo:
+        #     prompt = '\n'.join([self._instruction_prompt, ""])
+        # else:
+        prompt = '\n'.join([self._instruction_prompt, prompt])
+
+        
+        while True:
+            try:
+                all_samples = []
+                # response from llm model
+                if self._batch_inference:
+                    response = self._do_request(prompt)
+                    for res in response:
+                        all_samples.append(res)
+                else:
+                    for _ in range(self._samples_per_prompt):
+                        response = self._do_request(prompt)
+                        all_samples.append(response)
+
+                # trim equation program skeleton body from samples
+                if self._trim:
+                    all_samples = [_extract_body(sample, config) for sample in all_samples]
+                
+                return all_samples
+            except Exception:
+                continue
+
+    def _draw_samples_api(self, prompt: str, config: config_lib.Config) -> Collection[str]:
+        """API sampling method - placeholder for consistency."""
+        # Just call local method for now
+        return self._draw_samples_local(prompt, config)
+
+    def _do_request(self, content: str) -> str:
+        """Generate response using HuggingFace model with multi-GPU support."""
+        content = content.strip('\n').strip()
+        # repeat the prompt for batch inference
+        repeat_prompt: int = self._samples_per_prompt if self._batch_inference else 1
+        
+        # Generate using HuggingFace model
+        inputs = self.tokenizer(content, return_tensors="pt", truncation=True, max_length=1024)
+        
+        # Move inputs to the appropriate device based on model distribution
+        target_device = self.get_device_for_inputs(inputs)
+        inputs = {k: v.to(target_device) for k, v in inputs.items()}
+        
+        with torch.no_grad():
+            if self._batch_inference:
+                # Generate multiple samples at once
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=512,
+                    num_return_sequences=repeat_prompt,
+                    do_sample=True,
+                    temperature=0.8,
+                    top_p=0.9,
+                    top_k=50,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                )
+                
+                # Decode all outputs
+                responses = []
+                for output in outputs:
+                    generated_text = self.tokenizer.decode(
+                        output[inputs['input_ids'].shape[1]:], 
+                        skip_special_tokens=True
+                    )
+                    responses.append(generated_text.strip())
+                
+                return responses
+            else:
+                # Generate single sample
+                outputs = self.model.generate(
+                    **inputs,
+                    max_new_tokens=1024,
+                    do_sample=True,
+                    temperature=0.8,
+                    top_p=0.9,
+                    top_k=50,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                )
+                
+                # Decode output
+                generated_text = self.tokenizer.decode(
+                    outputs[0][inputs['input_ids'].shape[1]:], 
+                    skip_special_tokens=True
+                )
+                
+                return generated_text.strip()

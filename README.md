@@ -1,4 +1,4 @@
-cd llm-sr2l
+levels.fparcd llm-sr2l
 
 pip install -r requirements.txt
 

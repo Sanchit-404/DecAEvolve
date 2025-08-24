@@ -36,7 +36,7 @@ class ExperienceBufferConfig:
         cluster_sampling_temperature_init (float): Initial cluster softmax sampling temperature
         cluster_sampling_temperature_period (int): Period for temperature decay
     """
-    functions_per_prompt: int = 2 
+    functions_per_prompt: int = 0
     num_islands: int = 10 
     reset_period: int = 4 * 60 * 60
     cluster_sampling_temperature_init: float = 0.1
@@ -64,11 +64,11 @@ class Config:
     experience_buffer: ExperienceBufferConfig = dataclasses.field(default_factory=ExperienceBufferConfig)
     num_samplers: int = 1 
     num_evaluators: int = 1
-    samples_per_prompt: int = 8
+    samples_per_prompt: int = 16
     evaluate_timeout_seconds: int = 30  
     use_api: bool = False
-    api_model: str = "gpt-3.5-turbo"
-    hf_model: str = "microsoft/DialoGPT-medium"
+    api_model: str = "gpt-4o-mini"
+    hf_model: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
     grpo_learning_rate: float = 2e-5
     use_offline_grpo: bool = False
 

@@ -1,0 +1,313 @@
+ 10%|███████▏                                                                | 1/10 [00:31<04:43, 31.46s/it]
+=== LLMSR REWARD FUNCTION CALLED ===
+Prompts: 16, Completions: 16
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.995822
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999066
+Computed reward for completion: 0.999580
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.995646
+Computed reward for completion: 0.997411
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999590
+Computed reward for completion: 0.010000
+LLM-SR rewards: ['0.9996', '0.9958', '0.9996', '0.8956', '0.8956', '0.9991', '0.9996', '0.9996', '0.9996', '0.8956', '0.8956', '0.9956', '0.9974', '0.9996', '0.9996', '0.8956']
+Reward statistics - Mean: 0.9665, Std: 0.0478, Min: 0.8956, Max: 0.9996
+{'loss': 0.0, 'grad_norm': 1.067516803741455, 'learning_rate': 0.0, 'num_tokens': 12208.0, 'completions/mean_length': 512.0, 'completions/min_length': 512.0, 'completions/max_length': 512.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/llmsr_reward_function/mean': 0.9664534330368042, 'rewards/llmsr_reward_function/std': 0.04932058975100517, 'reward': 0.9664534330368042, 'reward_std': 0.049320586025714874, 'frac_reward_zero_std': 0.0, 'kl': 0.00020382911316119134, 'clip_ratio': 0.0, 'epoch': 0.03}
+=== LLMSR REWARD FUNCTION CALLED ===
+Prompts: 16, Completions: 16
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.995835
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999587
+Computed reward for completion: 0.999980
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999580
+Computed reward for completion: 0.999580
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.995474
+Computed reward for completion: 0.995835
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+LLM-SR rewards: ['0.8955', '0.8955', '0.9958', '0.9996', '0.9996', '1.0000', '0.8955', '0.8955', '0.9996', '0.9996', '0.9996', '0.9996', '0.9955', '0.9958', '0.8955', '0.8955']
+Reward statistics - Mean: 0.9598, Std: 0.0499, Min: 0.8955, Max: 1.0000
+{'loss': 0.0, 'grad_norm': 0.743827760219574, 'learning_rate': 1.0000000000000001e-07, 'num_tokens': 24416.0, 'completions/mean_length': 512.0, 'completions/min_length': 512.0, 'completions/max_length': 512.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/llmsr_reward_function/mean': 0.9598411321640015, 'rewards/llmsr_reward_function/std': 0.05151502415537834, 'reward': 0.9598411321640015, 'reward_std': 0.05151503160595894, 'frac_reward_zero_std': 0.0, 'kl': 0.00010570741869742051, 'clip_ratio': 0.0, 'epoch': 0.06}
+=== LLMSR REWARD FUNCTION CALLED ===
+Prompts: 16, Completions: 16
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.995835
+Computed reward for completion: 0.999979
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999587
+Computed reward for completion: 0.999577
+Computed reward for completion: 0.999581
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999591
+LLM-SR rewards: ['0.8958', '0.9958', '1.0000', '0.9996', '0.8958', '0.8958', '0.8958', '0.8958', '0.8958', '0.8958', '0.9996', '0.9996', '0.9996', '0.9996', '0.9996', '0.9996']
+Reward statistics - Mean: 0.9540, Std: 0.0513, Min: 0.8958, Max: 1.0000
+{'loss': 0.0, 'grad_norm': 0.921137273311615, 'learning_rate': 2.0000000000000002e-07, 'num_tokens': 36624.0, 'completions/mean_length': 512.0, 'completions/min_length': 512.0, 'completions/max_length': 512.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/llmsr_reward_function/mean': 0.9539835453033447, 'rewards/llmsr_reward_function/std': 0.052972521632909775, 'reward': 0.9539835453033447, 'reward_std': 0.05297253280878067, 'frac_reward_zero_std': 0.0, 'kl': 0.00015447154873982072, 'clip_ratio': 0.0, 'epoch': 0.09}
+=== LLMSR REWARD FUNCTION CALLED ===
+Prompts: 16, Completions: 16
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.973861
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.996727
+Computed reward for completion: 0.999979
+Computed reward for completion: 0.999581
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.897630
+Computed reward for completion: 0.010000
+LLM-SR rewards: ['0.9996', '0.7976', '0.9739', '0.7976', '0.9967', '1.0000', '0.9996', '0.7976', '0.7976', '0.7976', '0.7976', '0.9996', '0.9996', '0.7976', '0.8976', '0.7976']
+Reward statistics - Mean: 0.8905, Std: 0.0958, Min: 0.7976, Max: 1.0000
+{'loss': 0.0, 'grad_norm': 0.9873536229133606, 'learning_rate': 3.0000000000000004e-07, 'num_tokens': 48832.0, 'completions/mean_length': 512.0, 'completions/min_length': 512.0, 'completions/max_length': 512.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/llmsr_reward_function/mean': 0.8904726505279541, 'rewards/llmsr_reward_function/std': 0.098949134349823, 'reward': 0.8904726505279541, 'reward_std': 0.0989491268992424, 'frac_reward_zero_std': 0.0, 'kl': 0.00021692231530323625, 'clip_ratio': 0.0, 'epoch': 0.12}
+=== LLMSR REWARD FUNCTION CALLED ===
+Prompts: 16, Completions: 16
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.995695
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.995704
+Computed reward for completion: 0.999580
+Computed reward for completion: 0.999577
+Computed reward for completion: 0.999580
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999590
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999979
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999579
+LLM-SR rewards: ['0.8957', '0.9957', '0.8957', '0.8957', '0.9957', '0.9996', '0.9996', '0.9996', '0.9996', '0.8957', '0.9996', '0.8957', '0.8957', '1.0000', '0.8957', '0.9996']
+Reward statistics - Mean: 0.9537, Std: 0.0511, Min: 0.8957, Max: 1.0000
+{'loss': 0.0, 'grad_norm': 0.974596381187439, 'learning_rate': 4.0000000000000003e-07, 'num_tokens': 61040.0, 'completions/mean_length': 512.0, 'completions/min_length': 512.0, 'completions/max_length': 512.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/llmsr_reward_function/mean': 0.9536706209182739, 'rewards/llmsr_reward_function/std': 0.052821747958660126, 'reward': 0.9536706209182739, 'reward_std': 0.05282174423336983, 'frac_reward_zero_std': 0.0, 'kl': 0.00015272226301021874, 'clip_ratio': 0.0, 'epoch': 0.16}
+=== LLMSR REWARD FUNCTION CALLED ===
+Prompts: 16, Completions: 16
+Computed reward for completion: 0.995651
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999979
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.995459
+Computed reward for completion: 0.211467
+Computed reward for completion: 0.973861
+Computed reward for completion: 0.995739
+Computed reward for completion: 0.999581
+Computed reward for completion: 0.010000
+LLM-SR rewards: ['0.9957', '0.1115', '1.0000', '0.9996', '0.9996', '0.1115', '0.9996', '0.9996', '0.1115', '0.9996', '0.9955', '0.2115', '0.9739', '0.9957', '0.9996', '0.1115']
+Reward statistics - Mean: 0.7260, Std: 0.4015, Min: 0.1115, Max: 1.0000
+{'loss': 0.0, 'grad_norm': 0.9198623895645142, 'learning_rate': 5.000000000000001e-07, 'num_tokens': 73248.0, 'completions/mean_length': 512.0, 'completions/min_length': 512.0, 'completions/max_length': 512.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/llmsr_reward_function/mean': 0.725969672203064, 'rewards/llmsr_reward_function/std': 0.41464897990226746, 'reward': 0.725969672203064, 'reward_std': 0.41464897990226746, 'frac_reward_zero_std': 0.0, 'kl': 0.00020732397388201207, 'clip_ratio': 0.0, 'epoch': 0.19}
+=== LLMSR REWARD FUNCTION CALLED ===
+Prompts: 16, Completions: 16
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999583
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999580
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999564
+Computed reward for completion: 0.999559
+LLM-SR rewards: ['0.8996', '0.8996', '0.9996', '0.9996', '0.9996', '0.9996', '0.9996', '0.9996', '0.9996', '0.9996', '0.9996', '0.9996', '0.9996', '0.8996', '0.9996', '0.9996']
+Reward statistics - Mean: 0.9808, Std: 0.0390, Min: 0.8996, Max: 0.9996
+{'loss': 0.0, 'grad_norm': 1.222663402557373, 'learning_rate': 6.000000000000001e-07, 'num_tokens': 85456.0, 'completions/mean_length': 512.0, 'completions/min_length': 512.0, 'completions/max_length': 512.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/llmsr_reward_function/mean': 0.9808249473571777, 'rewards/llmsr_reward_function/std': 0.04031907767057419, 'reward': 0.9808249473571777, 'reward_std': 0.04031907394528389, 'frac_reward_zero_std': 0.0, 'kl': 0.00013636788935400546, 'clip_ratio': 0.0, 'epoch': 0.22}
+=== LLMSR REWARD FUNCTION CALLED ===
+Prompts: 16, Completions: 16
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999586
+Computed reward for completion: 0.999583
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999587
+Computed reward for completion: 0.997512
+Computed reward for completion: 0.999577
+Computed reward for completion: 0.996041
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999066
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999582
+LLM-SR rewards: ['0.9996', '0.9996', '0.9996', '0.9996', '0.9996', '0.9996', '0.8960', '0.9996', '0.9996', '0.9975', '0.9996', '0.9960', '0.8960', '0.9991', '0.8960', '0.9996']
+Reward statistics - Mean: 0.9798, Std: 0.0402, Min: 0.8960, Max: 0.9996
+{'loss': 0.0, 'grad_norm': 0.9335758090019226, 'learning_rate': 7.000000000000001e-07, 'num_tokens': 97664.0, 'completions/mean_length': 512.0, 'completions/min_length': 512.0, 'completions/max_length': 512.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/llmsr_reward_function/mean': 0.9797853231430054, 'rewards/llmsr_reward_function/std': 0.04156024381518364, 'reward': 0.9797853231430054, 'reward_std': 0.041560251265764236, 'frac_reward_zero_std': 0.0, 'kl': 0.00019395773415453732, 'clip_ratio': 0.0, 'epoch': 0.25}
+=== LLMSR REWARD FUNCTION CALLED ===
+Prompts: 16, Completions: 16
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.995987
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.996103
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.995835
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999585
+Computed reward for completion: 0.995815
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.010000
+LLM-SR rewards: ['0.9996', '0.8958', '0.9960', '0.9996', '0.9961', '0.8958', '0.9958', '0.9996', '0.8958', '0.8958', '0.9996', '0.8958', '0.9996', '0.9958', '0.9996', '0.8958']
+Reward statistics - Mean: 0.9598, Std: 0.0496, Min: 0.8958, Max: 0.9996
+{'loss': 0.0, 'grad_norm': 0.9247421622276306, 'learning_rate': 8.000000000000001e-07, 'num_tokens': 109872.0, 'completions/mean_length': 512.0, 'completions/min_length': 512.0, 'completions/max_length': 512.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/llmsr_reward_function/mean': 0.9597575664520264, 'rewards/llmsr_reward_function/std': 0.05117514356970787, 'reward': 0.9597575664520264, 'reward_std': 0.051175136119127274, 'frac_reward_zero_std': 0.0, 'kl': 0.0001715801772661507, 'clip_ratio': 0.0, 'epoch': 0.28}
+=== LLMSR REWARD FUNCTION CALLED ===
+Prompts: 16, Completions: 16
+Computed reward for completion: 0.996103
+Computed reward for completion: 0.999611
+Computed reward for completion: 0.999580
+Computed reward for completion: 0.996821
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.999587
+Computed reward for completion: 0.010000
+Computed reward for completion: 0.995835
+Computed reward for completion: 0.995839
+Computed reward for completion: 0.999981
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999980
+Computed reward for completion: 0.999582
+Computed reward for completion: 0.999980
+Computed reward for completion: 0.999284
+Computed reward for completion: 0.998232
+LLM-SR rewards: ['0.9961', '0.9996', '0.9996', '0.9968', '0.8958', '0.9996', '0.8958', '0.9958', '0.9958', '1.0000', '0.9996', '1.0000', '0.9996', '1.0000', '0.9993', '0.9982']
+Reward statistics - Mean: 0.9857, Std: 0.0340, Min: 0.8958, Max: 1.0000
+{'loss': 0.0, 'grad_norm': 1.0635826587677002, 'learning_rate': 9.000000000000001e-07, 'num_tokens': 122080.0, 'completions/mean_length': 512.0, 'completions/min_length': 512.0, 'completions/max_length': 512.0, 'completions/clipped_ratio': 1.0, 'completions/mean_terminated_length': 0.0, 'completions/min_terminated_length': 0.0, 'completions/max_terminated_length': 0.0, 'rewards/llmsr_reward_function/mean': 0.9857290983200073, 'rewards/llmsr_reward_function/std': 0.035125263035297394, 'reward': 0.9857290983200073, 'reward_std': 0.03512527421116829, 'frac_reward_zero_std': 0.0, 'kl': 0.00017621141159906983, 'clip_ratio': 0.0, 'epoch': 0.31}
+{'train_runtime': 307.731, 'train_samples_per_second': 0.52, 'train_steps_per_second': 0.032, 'train_loss': 8.434988558292389e-06, 'epoch': 0.31}
+GRPO training completed
+Model set to evaluation mode
+Offline training episode 1 completed
+Traceback (most recent call last):
+  File "/home/grads/parshinshojaee/llm-sr2l/main.py", line 70, in <module>
+    pipeline.main(
+  File "/home/grads/parshinshojaee/llm-sr2l/llmsr/pipeline.py", line 120, in main
+    s.sample(profiler=profiler)
+  File "/home/grads/parshinshojaee/llm-sr2l/llmsr/offline_grpo_sampler.py", line 858, in sample
+    samples = self._llm.draw_samples(prompt.code, self.config)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/llm-sr2l/llmsr/sampler.py", line 878, in draw_samples
+    return self._draw_samples_local(prompt, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/llm-sr2l/llmsr/sampler.py", line 890, in _draw_samples_local
+    response = self._do_request(prompt)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/llm-sr2l/llmsr/sampler.py", line 944, in _do_request
+    outputs = self.model.generate(
+              ^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/generation/utils.py", line 2629, in generate
+    result = self._sample(
+             ^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/generation/utils.py", line 3613, in _sample
+    outputs = model_forward(**model_inputs, return_dict=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/utils/generic.py", line 959, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 450, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+                                       ^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/utils/generic.py", line 1083, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 379, in forward
+    hidden_states = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/modeling_layers.py", line 94, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 231, in forward
+    hidden_states, _ = self.self_attn(
+                       ^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 180, in forward
+    attn_output = self.o_proj(attn_output)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/peft/tuners/lora/layer.py", line 766, in forward
+    lora_B = self.lora_B[active_adapter]
+             ~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/container.py", line 490, in __getitem__
+    @_copy_to_script_wrapper
+
+KeyboardInterrupt
+Exception ignored in atexit callback: <function _start_and_connect_service.<locals>.teardown_atexit at 0x77f552dc39c0>
+Traceback (most recent call last):
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/wandb/sdk/lib/service/service_connection.py", line 54, in teardown_atexit
+    conn.teardown(hooks.exit_code)
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/wandb/sdk/lib/service/service_connection.py", line 182, in teardown
+    self._router.join()
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/wandb/sdk/interface/router.py", line 75, in join
+    self._thread.join()
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/threading.py", line 1119, in join
+    self._wait_for_tstate_lock()
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/threading.py", line 1139, in _wait_for_tstate_lock
+    if lock.acquire(block, timeout):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt:

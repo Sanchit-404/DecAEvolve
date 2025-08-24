@@ -1,0 +1,68 @@
+{
+  "os": "Linux-6.8.0-55-generic-x86_64-with-glibc2.39",
+  "python": "CPython 3.11.7",
+  "startedAt": "2025-08-22T20:36:43.315316Z",
+  "args": [
+    "--spec_path",
+    "./specs/specification_oscillator1_numpy.txt",
+    "--use_offline_grpo",
+    "True",
+    "--grpo_learning_rate",
+    "1e-6",
+    "--hf_model",
+    "Qwen/Qwen2.5-0.5B-Instruct",
+    "--log_path",
+    "./logs/oscillator1_v16",
+    "--use_wandb",
+    "True"
+  ],
+  "program": "/home/grads/parshinshojaee/llm-sr2l/main.py",
+  "codePath": "main.py",
+  "codePathLocal": "main.py",
+  "git": {
+    "remote": "https://github.com/radical-p/llm-sr2l.git",
+    "commit": "65f67c06daebbb7aeabb73e2adc824c9665630da"
+  },
+  "email": "parshinshojaee@vt.edu",
+  "root": "/home/grads/parshinshojaee/llm-sr2l",
+  "host": "rail",
+  "executable": "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/bin/python",
+  "cpu_count": 48,
+  "cpu_count_logical": 96,
+  "gpu": "Quadro RTX 8000",
+  "gpu_count": 3,
+  "disk": {
+    "/": {
+      "total": "491000610816",
+      "used": "28084846592"
+    }
+  },
+  "memory": {
+    "total": "539555606528"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "Quadro RTX 8000",
+      "memoryTotal": "51539607552",
+      "cudaCores": 4608,
+      "architecture": "Turing",
+      "uuid": "GPU-67c99c49-7269-196a-967b-44a34971389d"
+    },
+    {
+      "name": "Quadro RTX 8000",
+      "memoryTotal": "51539607552",
+      "cudaCores": 4608,
+      "architecture": "Turing",
+      "uuid": "GPU-515f47d1-beee-4e44-e012-e8b700776b22"
+    },
+    {
+      "name": "Quadro RTX 8000",
+      "memoryTotal": "51539607552",
+      "cudaCores": 4608,
+      "architecture": "Turing",
+      "uuid": "GPU-c7c5a14b-4f47-d3bc-2fc5-d47d413f0b4b"
+    }
+  ],
+  "cudaVersion": "12.8",
+  "writerId": "tybyh0nd5anrt97kzn5zwexv7lmfxhun"
+}

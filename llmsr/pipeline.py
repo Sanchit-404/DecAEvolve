@@ -95,12 +95,14 @@ def main(
         
     if config.use_offline_grpo and class_config.llm_class in (OfflineGRPOHuggingFaceLLM,):
         # Use Offline GRPO sampler for offline GRPO-enabled models  
+        use_wandb = kwargs.get('use_wandb', True)
         samplers = [OfflineGRPOSampler(database, evaluators, 
                                         config.samples_per_prompt, 
                                         config,
                                         max_sample_nums=max_sample_nums, 
-                                        llm_class=class_config.llm_class) 
+                                        llm_class=class_config.llm_class,) 
                                         for _ in range(config.num_samplers)]
+
 
     else:
         # Use regular sampler
