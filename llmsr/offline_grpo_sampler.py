@@ -96,7 +96,7 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
             'use_liger_loss': (token_entropy_percentile_threshold == 0.0),
             'per_device_train_batch_size': 8,  # Reduced for stability
             'gradient_accumulation_steps': 8,
-            'max_prompt_length': 16384,
+            'max_prompt_length': 2048,
             'max_completion_length': 768,
             'num_generations': 64,  # Reduced to match batch size
             'logging_steps': 1,
