@@ -1,11 +1,11 @@
+logs/
 grpo_reward_logs/
 grpo_checkpoints/
 figs/
-logs/
-./logs/
-logs/*
 wandb/
 rewards/
+
 *.ipynb
+
 plot-logs.py
 plot_rewards.py
