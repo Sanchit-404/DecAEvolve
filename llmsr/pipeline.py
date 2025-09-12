@@ -66,8 +66,8 @@ def main(
     function_to_evolve, function_to_run = _extract_function_names(specification)
     template = code_manipulation.text_to_program(specification)
     database = buffer.ExperienceBuffer(config.experience_buffer, template, function_to_evolve)
-    if config.use_atomsr:
-        evaluator = evaluator2
+    # if config.use_atomsr:
+    #     evaluator = evaluator2
 
     # get log_dir and create profiler
     log_dir = kwargs.get('log_dir', None)
