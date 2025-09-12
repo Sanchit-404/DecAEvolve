@@ -1,0 +1,6 @@
+{"time":"2025-08-25T16:44:13.64789856-04:00","level":"INFO","msg":"stream: starting","core version":"0.21.1"}
+{"time":"2025-08-25T16:44:13.890854006-04:00","level":"INFO","msg":"stream: created new stream","id":"oro0ichm"}
+{"time":"2025-08-25T16:44:13.890919354-04:00","level":"INFO","msg":"stream: started","id":"oro0ichm"}
+{"time":"2025-08-25T16:44:13.890963913-04:00","level":"INFO","msg":"writer: started","stream_id":"oro0ichm"}
+{"time":"2025-08-25T16:44:13.890967552-04:00","level":"INFO","msg":"sender: started","stream_id":"oro0ichm"}
+{"time":"2025-08-25T16:44:13.891078296-04:00","level":"INFO","msg":"handler: started","stream_id":"oro0ichm"}

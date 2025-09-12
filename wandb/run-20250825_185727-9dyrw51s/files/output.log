@@ -1,0 +1,480 @@
+  0%|                                                                                      | 0/500 [00:00<?, ?it/s]Traceback (most recent call last):
+Error during offline GRPO training: CUDA out of memory. Tried to allocate 208.00 MiB. GPU 0 has a total capacity of 47.27 GiB of which 159.19 MiB is free. Process 1224348 has 1.47 GiB memory in use. Process 1261702 has 40.27 GiB memory in use. Including non-PyTorch memory, this process has 5.36 GiB memory in use. Of the allocated memory 4.41 GiB is allocated by PyTorch, and 773.26 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+  File "/home/grads/parshinshojaee/llm-sr2l/llmsr/offline_grpo_sampler.py", line 787, in train_with_offline_grpo
+    self.grpo_trainer.train()
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/trainer.py", line 2238, in train
+    return inner_training_loop(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/trainer.py", line 2582, in _inner_training_loop
+    tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/trainer.py", line 3790, in training_step
+    inputs = self._prepare_inputs(inputs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/trl/extras/profiling.py", line 98, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/trl/trainer/grpo_trainer.py", line 1279, in _prepare_inputs
+    generation_batch = self._generate_and_score_completions(generation_batch)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/trl/trainer/grpo_trainer.py", line 1577, in _generate_and_score_completions
+    prompt_completion_ids = unwrapped_model.generate(
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/peft/peft_model.py", line 886, in generate
+    return self.get_base_model().generate(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/generation/utils.py", line 2629, in generate
+    result = self._sample(
+             ^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/generation/utils.py", line 3613, in _sample
+    outputs = model_forward(**model_inputs, return_dict=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/utils/generic.py", line 959, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 450, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+                                       ^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/utils/generic.py", line 1083, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 379, in forward
+    hidden_states = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/modeling_layers.py", line 94, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 231, in forward
+    hidden_states, _ = self.self_attn(
+                       ^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 167, in forward
+    attn_output, attn_weights = attention_interface(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/integrations/sdpa_attention.py", line 89, in sdpa_attention_forward
+    attn_output = torch.nn.functional.scaled_dot_product_attention(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 208.00 MiB. GPU 0 has a total capacity of 47.27 GiB of which 159.19 MiB is free. Process 1224348 has 1.47 GiB memory in use. Process 1261702 has 40.27 GiB memory in use. Including non-PyTorch memory, this process has 5.36 GiB memory in use. Of the allocated memory 4.41 GiB is allocated by PyTorch, and 773.26 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+  0%|                                                                                      | 0/500 [01:45<?, ?it/s]
+Model set to evaluation mode
+Offline training episode 1 completed
+================= Evaluated Function =================
+def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ Mathematical function for acceleration in a damped nonlinear oscillator
+
+    Args:
+        x: A numpy array representing observations of current position.
+        v: A numpy array representing observations of velocity.
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+    """
+    """Combining both functions above."""
+    return equation(x, v, params)
+------------------------------------------------------
+Score        : None
+Sample time  : 5.869940251111984
+Evaluate time: 0.18139362335205078
+Sample orders: 10
+======================================================
+
+
+Collected offline sample: FAILED evaluation, Reward=0.010000
+================= Evaluated Function =================
+def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ Mathematical function for acceleration in a damped nonlinear oscillator
+
+    Args:
+        x: A numpy array representing observations of current position.
+        v: A numpy array representing observations of velocity.
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+    """
+    return -params[0] * x**3 - params[1] * x * v + params[2]
+------------------------------------------------------
+Score        : -0.0006179704265700019
+Sample time  : 5.869940251111984
+Evaluate time: 0.3883168697357178
+Sample orders: 11
+======================================================
+
+
+Collected offline sample: MSE=6.179704e-04, Score=-6.179704e-04, Reward=0.999382
+================= Evaluated Function =================
+def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ Mathematical function for acceleration in a damped nonlinear oscillator
+
+    Args:
+        x: A numpy array representing observations of current position.
+        v: A numpy array representing observations of velocity.
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+    """
+    """Another attempt at improving performance of the previous one."""
+
+    a = 5.0
+    b = 4.0
+    c = 6.0
+
+    # Perform operations directly based on the equation without explicitly calculating intermediate variables.
+    dv = a*x + b*v + c
+    return dv
+------------------------------------------------------
+Score        : -34.02370092111644
+Sample time  : 5.869940251111984
+Evaluate time: 0.18831801414489746
+Sample orders: 12
+======================================================
+
+
+Collected offline sample: MSE=3.402370e+01, Score=-3.402370e+01, Reward=0.000045
+================= Evaluated Function =================
+def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ Mathematical function for acceleration in a damped nonlinear oscillator
+
+    Args:
+        x: A numpy array representing observations of current position.
+        v: A numpy array representing observations of velocity.
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+    """
+    """A more advanced equation with additional terms."""
+    return params[0] * x - params[1] * v + params[2]
+------------------------------------------------------
+Score        : -0.00041851089927295913
+Sample time  : 5.869940251111984
+Evaluate time: 0.19931268692016602
+Sample orders: 13
+======================================================
+
+
+Collected offline sample: MSE=4.185109e-04, Score=-4.185109e-04, Reward=0.999582
+================= Evaluated Function =================
+def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ Mathematical function for acceleration in a damped nonlinear oscillator
+
+    Args:
+        x: A numpy array representing observations of current position.
+        v: A numpy array representing observations of velocity.
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+    """
+    """Improve upon both previous equations by incorporating damping and nonlinearity effects.
+
+    Parameters
+    ----------
+    x : ndarray
+    The independent variable representing position.
+    v : ndarray
+    The dependent variable representing velocity.
+    params : ndarray
+    An array containing model coefficients including the amplitude of oscillation, frequency, damping coefficient, nonlinearity parameter, etc.
+
+    Returns
+    -------
+    dv : ndarray
+    The derivative of the dependent variable (velocity).
+    """
+------------------------------------------------------
+Score        : None
+Sample time  : 5.869940251111984
+Evaluate time: 0.182037353515625
+Sample orders: 14
+======================================================
+
+
+Collected offline sample: FAILED evaluation, Reward=0.010000
+INFO:absl:Best score of island 6 increased to -0.00041617329856012003
+================= Evaluated Function =================
+def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ Mathematical function for acceleration in a damped nonlinear oscillator
+
+    Args:
+        x: A numpy array representing observations of current position.
+        v: A numpy array representing observations of velocity.
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+    """
+    """Complex representation of `equation_v0`. """
+    dv = (params[0] * x + params[1] * v + params[2]) / ((params[3] * x**2 + params[4] * v**2 + params[5])**2)
+    return dv
+------------------------------------------------------
+Score        : -0.00041617329856012003
+Sample time  : 5.869940251111984
+Evaluate time: 0.24387621879577637
+Sample orders: 15
+======================================================
+
+
+Collected offline sample: MSE=4.161733e-04, Score=-4.161733e-04, Reward=0.999584
+================= Evaluated Function =================
+def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ Mathematical function for acceleration in a damped nonlinear oscillator
+
+    Args:
+        x: A numpy array representing observations of current position.
+        v: A numpy array representing observations of velocity.
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+    """
+    """Generalized form of the oscillator equation."""
+    return -(x + 4*v)
+------------------------------------------------------
+Score        : -0.4678422864105561
+Sample time  : 5.869940251111984
+Evaluate time: 0.1680903434753418
+Sample orders: 16
+======================================================
+
+
+Collected offline sample: MSE=4.678423e-01, Score=-4.678423e-01, Reward=0.626352
+================= Evaluated Function =================
+def equation(x: np.ndarray, v: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ Mathematical function for acceleration in a damped nonlinear oscillator
+
+    Args:
+        x: A numpy array representing observations of current position.
+        v: A numpy array representing observations of velocity.
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        A numpy array representing acceleration as the result of applying the mathematical function to the inputs.
+    """
+    """More complex implementation."""
+    dv = params[0] * (np.exp(-v) * x + np.cos(3*v) ) + params[1] * v + params[2]
+    return dv
+------------------------------------------------------
+Score        : -0.0008774566325406111
+Sample time  : 5.869940251111984
+Evaluate time: 0.19998621940612793
+Sample orders: 17
+======================================================
+
+
+Collected offline sample: MSE=8.774566e-04, Score=-8.774566e-04, Reward=0.999123
+Triggering offline GRPO training after this iteration...
+Prepared offline dataset: 1 unique prompts
+Total samples: 16
+Offline - Reward statistics - Mean: 0.5970, Std: 0.4647, Min: 0.0000, Max: 0.9996
+Starting offline GRPO training episode 2...
+GRPO config: per_device_train_batch_size=8
+Flattened dataset: 16 total samples
+/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/peft/mapping_func.py:73: UserWarning: You are trying to modify a model with PEFT for a second time. If you want to reload the model with a different config, make sure to call `.unload()` before.
+  warnings.warn(
+/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/peft/tuners/tuners_utils.py:196: UserWarning: Already found a `peft_config` attribute in the model. This will lead to having multiple adapters in the model. Make sure to know what you are doing!
+  warnings.warn(
+Starting GRPO training...
+  0%|                                                                                      | 0/500 [00:00<?, ?it/s]Traceback (most recent call last):
+Error during offline GRPO training: CUDA out of memory. Tried to allocate 208.00 MiB. GPU 0 has a total capacity of 47.27 GiB of which 159.19 MiB is free. Process 1224348 has 1.47 GiB memory in use. Process 1261702 has 40.27 GiB memory in use. Including non-PyTorch memory, this process has 5.36 GiB memory in use. Of the allocated memory 4.41 GiB is allocated by PyTorch, and 775.08 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+  File "/home/grads/parshinshojaee/llm-sr2l/llmsr/offline_grpo_sampler.py", line 787, in train_with_offline_grpo
+    self.grpo_trainer.train()
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/trainer.py", line 2238, in train
+    return inner_training_loop(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/trainer.py", line 2582, in _inner_training_loop
+    tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/trainer.py", line 3790, in training_step
+    inputs = self._prepare_inputs(inputs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/trl/extras/profiling.py", line 98, in wrapper
+    return func(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/trl/trainer/grpo_trainer.py", line 1279, in _prepare_inputs
+    generation_batch = self._generate_and_score_completions(generation_batch)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/trl/trainer/grpo_trainer.py", line 1577, in _generate_and_score_completions
+    prompt_completion_ids = unwrapped_model.generate(
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/peft/peft_model.py", line 886, in generate
+    return self.get_base_model().generate(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/generation/utils.py", line 2629, in generate
+    result = self._sample(
+             ^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/generation/utils.py", line 3613, in _sample
+    outputs = model_forward(**model_inputs, return_dict=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/utils/generic.py", line 959, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 450, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+                                       ^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/utils/generic.py", line 1083, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 379, in forward
+    hidden_states = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/modeling_layers.py", line 94, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 231, in forward
+    hidden_states, _ = self.self_attn(
+                       ^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 167, in forward
+    attn_output, attn_weights = attention_interface(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/integrations/sdpa_attention.py", line 89, in sdpa_attention_forward
+    attn_output = torch.nn.functional.scaled_dot_product_attention(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 208.00 MiB. GPU 0 has a total capacity of 47.27 GiB of which 159.19 MiB is free. Process 1224348 has 1.47 GiB memory in use. Process 1261702 has 40.27 GiB memory in use. Including non-PyTorch memory, this process has 5.36 GiB memory in use. Of the allocated memory 4.41 GiB is allocated by PyTorch, and 775.08 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+  0%|                                                                                      | 0/500 [01:41<?, ?it/s]
+Model set to evaluation mode
+Offline training episode 2 completed
+Traceback (most recent call last):
+  File "/home/grads/parshinshojaee/llm-sr2l/main.py", line 70, in <module>
+    pipeline.main(
+  File "/home/grads/parshinshojaee/llm-sr2l/llmsr/pipeline.py", line 120, in main
+    s.sample(profiler=profiler)
+  File "/home/grads/parshinshojaee/llm-sr2l/llmsr/offline_grpo_sampler.py", line 860, in sample
+    samples = self._llm.draw_samples(prompt.code, self.config)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/llm-sr2l/llmsr/sampler.py", line 882, in draw_samples
+    return self._draw_samples_local(prompt, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/llm-sr2l/llmsr/sampler.py", line 894, in _draw_samples_local
+    response = self._do_request(prompt)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/llm-sr2l/llmsr/sampler.py", line 948, in _do_request
+    outputs = self.model.generate(
+              ^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/generation/utils.py", line 2629, in generate
+    result = self._sample(
+             ^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/generation/utils.py", line 3613, in _sample
+    outputs = model_forward(**model_inputs, return_dict=True)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/utils/generic.py", line 959, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 450, in forward
+    outputs: BaseModelOutputWithPast = self.model(
+                                       ^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/utils/generic.py", line 1083, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 379, in forward
+    hidden_states = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/modeling_layers.py", line 94, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 246, in forward
+    hidden_states = self.mlp(hidden_states)
+                    ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/transformers/models/qwen2/modeling_qwen2.py", line 45, in forward
+    down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+                ^^^^^^^^^^^^^^
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1927, in __getattr__
+    def __getattr__(self, name: str) -> Union[Tensor, "Module"]:
+
+KeyboardInterrupt
+Exception ignored in atexit callback: <function _start_and_connect_service.<locals>.teardown_atexit at 0x756e30e6f6a0>
+Traceback (most recent call last):
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/wandb/sdk/lib/service/service_connection.py", line 54, in teardown_atexit
+    conn.teardown(hooks.exit_code)
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/wandb/sdk/lib/service/service_connection.py", line 182, in teardown
+    self._router.join()
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/site-packages/wandb/sdk/interface/router.py", line 75, in join
+    self._thread.join()
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/threading.py", line 1119, in join
+    self._wait_for_tstate_lock()
+  File "/home/grads/parshinshojaee/miniconda3/envs/llmsr2l/lib/python3.11/threading.py", line 1139, in _wait_for_tstate_lock
+    if lock.acquire(block, timeout):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt:

@@ -36,10 +36,10 @@ class ExperienceBufferConfig:
         cluster_sampling_temperature_init (float): Initial cluster softmax sampling temperature
         cluster_sampling_temperature_period (int): Period for temperature decay
     """
-    functions_per_prompt: int = 0
+    functions_per_prompt: int = 2 ## change to 0 for LLMSR with GRPO
     num_islands: int = 10 
     reset_period: int = 4 * 60 * 60
-    cluster_sampling_temperature_init: float = 0.1
+    cluster_sampling_temperature_init: float = 0.9 #0.1
     cluster_sampling_temperature_period: int = 30_000
 
 
@@ -64,13 +64,14 @@ class Config:
     experience_buffer: ExperienceBufferConfig = dataclasses.field(default_factory=ExperienceBufferConfig)
     num_samplers: int = 1 
     num_evaluators: int = 1
-    samples_per_prompt: int = 16
+    samples_per_prompt: int = 4 ## change to 16 for LLMSR with GRPO
     evaluate_timeout_seconds: int = 30  
     use_api: bool = False
     api_model: str = "gpt-4o-mini"
     hf_model: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    grpo_learning_rate: float = 2e-5
+    grpo_learning_rate: float = 1e-6
     use_offline_grpo: bool = False
+    use_atomsr: bool = False
 
 
 @dataclasses.dataclass()

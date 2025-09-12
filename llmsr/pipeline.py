@@ -22,6 +22,7 @@ from typing import Any, Tuple, Sequence
 from llmsr import code_manipulation
 from llmsr import config as config_lib
 from llmsr import evaluator
+from llmsr import evaluator2
 from llmsr import buffer
 from llmsr import sampler
 from llmsr import profile
@@ -65,6 +66,8 @@ def main(
     function_to_evolve, function_to_run = _extract_function_names(specification)
     template = code_manipulation.text_to_program(specification)
     database = buffer.ExperienceBuffer(config.experience_buffer, template, function_to_evolve)
+    if config.use_atomsr:
+        evaluator = evaluator2
 
     # get log_dir and create profiler
     log_dir = kwargs.get('log_dir', None)
@@ -87,7 +90,6 @@ def main(
 
     initial = template.get_function(function_to_evolve).body
     evaluators[0].analyse(initial, island_id=None, version_generated=None, profiler=profiler)
-
     # Set global max sample nums and configure samplers
     # Import GRPO classes if needed
     if config.use_offline_grpo:

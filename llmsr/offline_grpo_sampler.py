@@ -24,7 +24,7 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
     
     def __init__(self, samples_per_prompt: int, model_name: str = None, 
                  batch_inference: bool = True, trim: bool = True, 
-                 learning_rate: float = 2e-5) -> None:
+                 learning_rate: float = 1e-6) -> None:
         """
         Initialize offline GRPO-enabled HuggingFace model.
         """
@@ -37,12 +37,11 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
                 self.model = self.model.to(torch.float32).to("mps")
         except Exception:
             pass
-        
-        self._setup_grpo_trainer(learning_rate=learning_rate)
-        
+
         self.offline_dataset = []
         self.training_episodes = 0
         self.evaluators = None  # Will be set by sampler
+        self._setup_grpo_trainer(learning_rate=learning_rate)
         
         print("Offline GRPO-enabled HuggingFace model initialized successfully")
     
@@ -64,7 +63,7 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
         
         self.model = get_peft_model(self.model, lora_config)
     
-    def _setup_grpo_trainer(self, learning_rate=2e-5):
+    def _setup_grpo_trainer(self, learning_rate=1e-6):
         """Setup GRPO trainer configuration for offline training (version-compatible)."""
         # if torch.cuda.is_available():
         #     optim = "adamw_8bit"
@@ -86,7 +85,7 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
     
         
         cfg_kwargs = {
-            'output_dir': "./grpo_checkpoints",
+            # 'output_dir': f"./grpo_checkpoints/{self.problem_name}-adaptive/run4/episode{self.training_episodes}",
             'learning_rate': learning_rate,
             'lr_scheduler_type': lr_scheduler_type,
             'warmup_steps': lr_scheduler_kwargs_dict["num_warmup_steps"],
@@ -95,17 +94,17 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
             'temperature': 0.8,
             'top_p': 0.9,
             'use_liger_loss': (token_entropy_percentile_threshold == 0.0),
-            'per_device_train_batch_size': 16,  # Reduced for stability
-            'gradient_accumulation_steps': 4,
-            'max_prompt_length': 512,
-            'max_completion_length': 512,
+            'per_device_train_batch_size': 8,  # Reduced for stability
+            'gradient_accumulation_steps': 8,
+            'max_prompt_length': 16384,
+            'max_completion_length': 768,
             'num_generations': 64,  # Reduced to match batch size
             'logging_steps': 1,
-            'save_steps': 50,
+            'save_steps': 8,
             'dataloader_num_workers': 0,
             'greater_is_better': True,
             # Ensure finite training when dataloader has no length
-            'max_steps': 500,
+            'max_steps': 8,
             'scale_rewards': True,
             'max_grad_norm': 1.0,
             'beta': 0.05,
@@ -119,6 +118,7 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
             # "vllm_mode": "colocate", 
             # "vllm_server_timeout": 1200
         }
+        # cfg_kwargs['output_dir'] = f"./grpo_checkpoints/{self.problem_name}-adaptive-{self.model_name}-r{8}-ga{cfg_kwargs['gradient_accumulation_steps']}-g{cfg_kwargs['num_generations']}/run5/episode{self.training_episodes}"
 
         sig = inspect.signature(GRPOConfig.__init__)
         filtered_kwargs = {k: v for k, v in cfg_kwargs.items() if k in sig.parameters}
@@ -138,6 +138,65 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
         
         # Initialize trainer (will be recreated for each training round)
         self.grpo_trainer = None
+    
+    def _create_episode_config(self, lora_cfg):
+        """Create a new GRPO config for each training episode with unique run_name."""
+        import inspect
+        import time
+        
+        # Build kwargs and filter by GRPOConfig signature for compatibility across TRL versions
+        lr_scheduler_type: str = "warmup_stable_decay"
+        lr_scheduler_kwargs: dict[str, Any] = field(
+            default_factory=lambda: dict(num_warmup_steps=200, num_decay_steps=0, min_lr_ratio=0.0)
+        )
+        lr_scheduler_kwargs_dict = lr_scheduler_kwargs.default_factory()
+        token_entropy_percentile_threshold = 0.0 # from https://huggingface/papers/2506.01939
+        
+        cfg_kwargs = {
+            'learning_rate': 1e-6,
+            'lr_scheduler_type': lr_scheduler_type,
+            'warmup_steps': lr_scheduler_kwargs_dict["num_warmup_steps"],
+            'lr_scheduler_kwargs': {k: v for k,v in lr_scheduler_kwargs_dict.items() if k != "num_warmup_steps"},
+            'mask_truncated_completions': False,
+            'temperature': 0.8,
+            'top_p': 0.9,
+            'use_liger_loss': (token_entropy_percentile_threshold == 0.0),
+            'per_device_train_batch_size': 8,  # Reduced for stability
+            'gradient_accumulation_steps': 8,
+            'max_prompt_length': 2048,
+            'max_completion_length': 768,
+            'num_generations': 64,  # Reduced to match batch size
+            'logging_steps': 1,
+            'save_steps': 8,
+            'dataloader_num_workers': 0,
+            'greater_is_better': True,
+            # Ensure finite training when dataloader has no length
+            'max_steps': 8,
+            'scale_rewards': True,
+            'max_grad_norm': 1.0,
+            'beta': 0.05,
+            'epsilon': 0.2,
+            'disable_dropout': True,
+            'report_to': "wandb",
+            # Unique run_name for each episode
+        }
+        cfg_kwargs['output_dir']= f"./grpo_checkpoints/{self.problem_name}-adaptive-{self.model_name.replace('Qwen/', '')}-r{lora_cfg.r}-ga{cfg_kwargs['gradient_accumulation_steps']}-g{cfg_kwargs['num_generations']}/episode{self.training_episodes}"
+        cfg_kwargs['run_name']= f"episode-{self.training_episodes}-{self.model_name}-r{lora_cfg.r}-ga{cfg_kwargs['gradient_accumulation_steps']}-ng{cfg_kwargs['num_generations']}-{int(time.time() * 1000)}"
+
+        sig = inspect.signature(GRPOConfig.__init__)
+        filtered_kwargs = {k: v for k, v in cfg_kwargs.items() if k in sig.parameters}
+        try:
+            return GRPOConfig(**filtered_kwargs)
+        except TypeError:
+            # Fallback: drop optional stabilizers if still incompatible
+            minimal_keys = [
+                'output_dir','learning_rate','per_device_train_batch_size','gradient_accumulation_steps',
+                'max_prompt_length','max_completion_length','num_generations','optim',
+                'num_train_epochs','bf16','remove_unused_columns','logging_steps','save_steps',
+                'dataloader_num_workers','report_to','greater_is_better','run_name'
+            ]
+            minimal_kwargs = {k: v for k, v in cfg_kwargs.items() if k in sig.parameters and k in minimal_keys}
+            return GRPOConfig(**minimal_kwargs)
     
     def collect_offline_sample(self, prompt: str, completion: str, reward: float):
         """
@@ -522,12 +581,12 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
             return getattr(self, "formatted_dataset", {})
 
         # Initialize if first time
-        if not hasattr(self, "formatted_dataset") or not self.formatted_dataset:
-            self.formatted_dataset = {
-                'prompt': [],
-                'completion': [],
-                'rewards': []
-            }
+        # if not hasattr(self, "formatted_dataset") or not self.formatted_dataset:
+        self.formatted_dataset = {
+            'prompt': [],
+            'completion': [],
+            'rewards': []
+        }
 
         # Convert to dict for faster lookup
         prompt_to_idx = {p: i for i, p in enumerate(self.formatted_dataset['prompt'])}
@@ -626,6 +685,8 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
         def llmsr_reward_function(prompts, completions, **kwargs):
             print(f"=== LLMSR REWARD FUNCTION CALLED ===")
             print(f"Prompts: {len(prompts)}, Completions: {len(completions)}")
+            # print prompts 
+            print(f"Prompts: {prompts}")
             
             rewards = []
             for prompt, completion in zip(prompts, completions):
@@ -770,19 +831,35 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
                 use_rslora="True",
             )
 
+            # Create a new config for this training episode
             import os
-            os.environ["WANDB_PROJECT"] = f"llmsr-grpo-oscillator1-single-gpu"
-            self.grpo_config.run_name = f"{self.model_name}-r{lora_cfg.r}-g{getattr(self.grpo_config,'num_generations',4)}-{int(time.time())}"
+            import wandb
+            
+            # Finish any existing WandB run to ensure clean separation
+            if wandb.run is not None:
+                print(f"Finishing previous WandB run: {wandb.run.name}")
+                wandb.finish()
+            
+            # Set WandB environment variables
+            os.environ["WANDB_PROJECT"] = f"llmsr-grpo-{self.problem_name}-adaptive-single-gpu"
+            os.environ["WANDB_MODE"] = "online"  # Ensure online mode
+            
+            # Create a fresh config with unique run_name for this episode
+            episode_config = self._create_episode_config(lora_cfg)
+            print(f"Created new GRPO config for episode {self.training_episodes} with run_name: {episode_config.run_name}")
+            print(f"WandB project: {os.environ.get('WANDB_PROJECT', 'Not set')}")
+            print(f"Current WandB run before training: {wandb.run.name if wandb.run else 'None'}")
 
             self.grpo_trainer = GRPOTrainer(
                 model=self.model,
                 # model = self.model_name,
                 reward_funcs=[llmsr_reward_function],
-                args=self.grpo_config,
+                args=episode_config,
                 train_dataset=train_dataset,
                 processing_class=self.tokenizer,
                 peft_config=lora_cfg,
             )
+            print(f"WandB run after trainer creation: {wandb.run.name if wandb.run else 'None'}")
             print("Starting GRPO training...")
             self.grpo_trainer.train()
             print("GRPO training completed")
@@ -797,6 +874,12 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
             self.grpo_trainer = None
             self.model.eval()
             print("Model set to evaluation mode")
+            
+            # Finish WandB run for this episode
+            import wandb
+            if wandb.run is not None:
+                print(f"Finishing WandB run for episode {self.training_episodes}: {wandb.run.name}")
+                wandb.finish()
         
         # Save the trained model
         # self.model.save_pretrained(f"./grpo_checkpoints/offline_episode_{self.training_episodes}")
@@ -921,12 +1004,13 @@ class OfflineGRPOSampler(Sampler):
                 except Exception:
                     pass
                 
+                # breakpoint()
                 print("Triggering offline GRPO training after this iteration...")
                 self._llm.train_with_offline_grpo()
                 
                 self.samples_since_training = 0
 
-                breakpoint()
+                # breakpoint()
     
 
     def _calculate_score_from_tests(self, scores_per_test):

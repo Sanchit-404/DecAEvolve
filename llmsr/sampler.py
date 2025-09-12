@@ -22,6 +22,7 @@ import numpy as np
 import time
 
 from llmsr import evaluator
+from llmsr import evaluator2
 from llmsr import buffer
 from llmsr import config as config_lib
 import requests
@@ -73,6 +74,7 @@ class Sampler:
         self._samples_per_prompt = samples_per_prompt
         self._database = database
         self._evaluators = evaluators
+
         # Import GRPO class only if needed
         try:
             from .grpo_sampler import GRPOHuggingFaceLLM
@@ -99,6 +101,9 @@ class Sampler:
     
     def sample(self, **kwargs):
         """ Continuously gets prompts, samples programs, sends them for analysis. """
+        if self.config.use_atomsr:
+            evaluator = evaluator2
+        
         while True:
             # stop the search process if hit global max sample nums
             if self._max_sample_nums and self.__class__._global_samples_nums >= self._max_sample_nums:
@@ -828,6 +833,8 @@ class HuggingFaceLLM(LLM):
                 # Single GPU or CPU setup
                 self.is_distributed = False
                 
+
+            ############# ADDED FOR ANALYSIS ########################
             model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
             # device_map=infer_auto_device_map(model)
             device_map='cuda'
@@ -838,6 +845,7 @@ class HuggingFaceLLM(LLM):
                 torch_dtype=torch.float16,  # Use half precision
                 low_cpu_mem_usage=True,
             )
+            #########################################################
 
             # self.model = dispatch_model(self.model, device_map=device_map)
             

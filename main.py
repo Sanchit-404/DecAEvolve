@@ -9,6 +9,7 @@ from llmsr import pipeline
 from llmsr import config
 from llmsr import sampler
 from llmsr import evaluator
+from llmsr import evaluator2
 
 
 parser = ArgumentParser()
@@ -16,12 +17,13 @@ parser.add_argument('--port', type=int, default=None)
 parser.add_argument('--use_api', type=bool, default=False)
 parser.add_argument('--api_model', type=str, default="gpt-4o-mini")
 parser.add_argument('--spec_path', type=str)
-parser.add_argument('--log_path', type=str, default="./logs/oscillator1")
-parser.add_argument('--problem_name', type=str, default="oscillator1")
+parser.add_argument('--log_path', type=str, default="./logs/oscillator2")
+parser.add_argument('--problem_name', type=str, default="oscillator2")
 parser.add_argument('--run_id', type=int, default=1)
 parser.add_argument('--hf_model', type=str, default="Qwen/Qwen2.5-1.5B-Instruct")
 parser.add_argument('--grpo_learning_rate', type=float, default=1e-6)
 parser.add_argument('--use_offline_grpo', type=bool, default=False)
+parser.add_argument('--use_atomsr', type=bool, default=False)
 parser.add_argument('--use_wandb', type=bool, default=True)
 args = parser.parse_args()
 
@@ -31,6 +33,9 @@ args = parser.parse_args()
 if __name__ == '__main__':
     # Load config and parameters
     # Choose LLM class based on GRPO flags
+    if args.use_atomsr:
+        evaluator = evaluator2
+    
     if args.use_offline_grpo:
         from llmsr.offline_grpo_sampler import OfflineGRPOHuggingFaceLLM
         llm_class = OfflineGRPOHuggingFaceLLM
@@ -44,7 +49,8 @@ if __name__ == '__main__':
                            api_model = args.api_model,
                            hf_model = args.hf_model,
                            grpo_learning_rate = args.grpo_learning_rate,
-                           use_offline_grpo = args.use_offline_grpo)
+                           use_offline_grpo = args.use_offline_grpo,
+                           use_atomsr = args.use_atomsr)
     global_max_sample_num = 10000 
 
     # Load prompt specification
