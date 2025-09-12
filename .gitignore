@@ -2,6 +2,8 @@ grpo_reward_logs/
 grpo_checkpoints/
 figs/
 logs/
+./logs/
+logs/*
 wandb/
 rewards/
 *.ipynb
