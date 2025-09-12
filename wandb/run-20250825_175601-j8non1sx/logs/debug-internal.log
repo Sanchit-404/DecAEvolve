@@ -1,7 +1,0 @@
-{"time":"2025-08-25T17:56:01.233176525-04:00","level":"INFO","msg":"stream: starting","core version":"0.21.1"}
-{"time":"2025-08-25T17:56:01.465346864-04:00","level":"INFO","msg":"stream: created new stream","id":"j8non1sx"}
-{"time":"2025-08-25T17:56:01.4654178-04:00","level":"INFO","msg":"stream: started","id":"j8non1sx"}
-{"time":"2025-08-25T17:56:01.465449744-04:00","level":"INFO","msg":"writer: started","stream_id":"j8non1sx"}
-{"time":"2025-08-25T17:56:01.465455172-04:00","level":"INFO","msg":"handler: started","stream_id":"j8non1sx"}
-{"time":"2025-08-25T17:56:01.465471092-04:00","level":"INFO","msg":"sender: started","stream_id":"j8non1sx"}
-{"time":"2025-08-25T19:33:47.033172388-04:00","level":"INFO","msg":"api: retrying HTTP error","status":502,"url":"https://api.wandb.ai/files/parshin-reddy/llmsr-grpo-oscillator1-single-gpu/j8non1sx/file_stream","body":"\n<html><head>\n<meta http-equiv=\"content-type\" content=\"text/html;charset=utf-8\">\n<title>502 Server Error</title>\n</head>\n<body text=#000000 bgcolor=#ffffff>\n<h1>Error: Server Error</h1>\n<h2>The server encountered a temporary error and could not complete your request.<p>Please try again in 30 seconds.</h2>\n<h2></h2>\n</body></html>\n"}

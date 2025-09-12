@@ -4,9 +4,6 @@ figs/
 logs/
 wandb/
 rewards/
-
-
 *.ipynb
-
 plot-logs.py
 plot_rewards.py
