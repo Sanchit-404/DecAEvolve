@@ -64,7 +64,7 @@ class Config:
     experience_buffer: ExperienceBufferConfig = dataclasses.field(default_factory=ExperienceBufferConfig)
     num_samplers: int = 1 
     num_evaluators: int = 1
-    samples_per_prompt: int = 4 ## change to 16 for LLMSR with GRPO
+    samples_per_prompt: int = 16 ## change to 16 for LLMSR with GRPO
     evaluate_timeout_seconds: int = 30  
     use_api: bool = False
     api_model: str = "gpt-4o-mini"
