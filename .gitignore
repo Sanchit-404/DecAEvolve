@@ -3,6 +3,8 @@ grpo_checkpoints/
 figs/
 logs/
 wandb/
+rewards/
+
 
 *.ipynb
 
