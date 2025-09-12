@@ -1,8 +1,8 @@
-./grpo_reward_logs/*
-./grpo_checkpoints/* 
-./figs/* 
-./logs/* 
-./wandb/* 
+grpo_reward_logs/
+grpo_checkpoints/
+figs/
+logs/
+wandb/
 
 *.ipynb
 
