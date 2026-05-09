@@ -683,33 +683,60 @@ class Evaluator:
                             # Generate enhanced annotations
                             comment_lines = []
                             
-                            # Add individual term contributions
-                            comment_lines.append("# Individual Term Contributions:")
-                            for term, contribution in term_contributions:
-                                if contribution > 0:
-                                    direction = "decreases"
-                                elif contribution < 0:
-                                    direction = "increases"
-                                else:
-                                    direction = "does not change"
-                                comment_lines.append(
-                                    f"# [Ablation] Removing this term {direction} the score by {abs(contribution):.8f}: {term}"
-                                )
+                            # Sort and include only the top/bottom 3 individual term contributions
+                            # Apply a small threshold to filter out numerical noise
+                            ablation_eps = float(os.environ.get('ABLATION_MIN_DELTA', '1e-6'))
+                            valid_term_contribs = [tc for tc in term_contributions if abs(tc[1]) > ablation_eps]
+                            positive_terms = sorted([tc for tc in valid_term_contribs if tc[1] > 0], key=lambda x: x[1], reverse=True)[:3]
                             
-                            # Add pair contributions (limit to prevent excessive output)
-                            if pair_contributions:
-                                comment_lines.append("\n# Term Pair Contributions (Top 5):")
-                                # Sort by absolute contribution and take top 5
-                                sorted_pairs = sorted(pair_contributions, key=lambda x: abs(x[1]), reverse=True)[:5]
-                                for (term1, term2), contribution in sorted_pairs:
-                                    if contribution > 0:
-                                        direction = "decreases"
-                                    elif contribution < 0:
-                                        direction = "increases"
-                                    else:
-                                        direction = "does not change"
+                            if positive_terms:
+                                comment_lines.append("# Top 3 Most Contributing Terms:")
+                                for term, contribution in positive_terms:
                                     comment_lines.append(
-                                        f"# [Ablation] Removing these terms together {direction} the score by {abs(contribution):.8f}:"
+                                        f"# [Ablation] Removing this term decreases the score by {abs(contribution):.8f}: {term}"
+                                    )
+
+                            # Show the three overall least contributions (includes negative and small positive)
+                            least_terms_all = sorted(valid_term_contribs, key=lambda x: x[1])
+                            least_terms = []
+                            for tc in least_terms_all:
+                                if tc not in positive_terms:
+                                    least_terms.append(tc)
+                                if len(least_terms) == 3:
+                                    break
+                            if least_terms:
+                                comment_lines.append("# Top 3 Least Contributing Terms:")
+                                for term, contribution in least_terms:
+                                    change_word = "increases" if contribution < 0 else "decreases"
+                                    comment_lines.append(
+                                        f"# [Ablation] Removing this term {change_word} the score by {abs(contribution):.8f}: {term}"
+                                    )
+                            
+                            # Add sorted and limited pair contributions (top/bottom 3)
+                            valid_pair_contribs = [pc for pc in pair_contributions if abs(pc[1]) > ablation_eps]
+                            positive_pairs = sorted([pc for pc in valid_pair_contribs if pc[1] > 0], key=lambda x: x[1], reverse=True)[:3]
+                            least_pairs_all = sorted(valid_pair_contribs, key=lambda x: x[1])
+                            least_pairs = []
+                            for pc in least_pairs_all:
+                                if pc not in positive_pairs:
+                                    least_pairs.append(pc)
+                                if len(least_pairs) == 3:
+                                    break
+
+                            if positive_pairs:
+                                comment_lines.append("\n# Top 3 Most Contributing Term Pairs:")
+                                for (term1, term2), contribution in positive_pairs:
+                                    comment_lines.append(
+                                        f"# [Ablation] Removing these terms together decreases the score by {abs(contribution):.8f}:"
+                                    )
+                                    comment_lines.append(f"#   Term 1: {term1}")
+                                    comment_lines.append(f"#   Term 2: {term2}")
+                            if least_pairs:
+                                comment_lines.append("\n# Top 3 Least Contributing Term Pairs:")
+                                for (term1, term2), contribution in least_pairs:
+                                    change_word = "increases" if contribution < 0 else "decreases"
+                                    comment_lines.append(
+                                        f"# [Ablation] Removing these terms together {change_word} the score by {abs(contribution):.8f}:"
                                     )
                                     comment_lines.append(f"#   Term 1: {term1}")
                                     comment_lines.append(f"#   Term 2: {term2}")

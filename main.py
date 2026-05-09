@@ -9,7 +9,6 @@ from llmsr import pipeline
 from llmsr import config
 from llmsr import sampler
 from llmsr import evaluator
-from llmsr import evaluator2
 
 
 parser = ArgumentParser()
@@ -25,6 +24,7 @@ parser.add_argument('--grpo_learning_rate', type=float, default=1e-6)
 parser.add_argument('--use_offline_grpo', type=bool, default=False)
 parser.add_argument('--use_atomsr', type=bool, default=False)
 parser.add_argument('--use_wandb', type=bool, default=True)
+parser.add_argument('--vllm_model_name', type=str, default="default")
 args = parser.parse_args()
 
 
@@ -33,9 +33,12 @@ args = parser.parse_args()
 if __name__ == '__main__':
     # Load config and parameters
     # Choose LLM class based on GRPO flags
+    sandbox_mod = evaluator
     if args.use_atomsr:
-        evaluator = evaluator2
-    
+        from llmsr import evaluator2
+
+        sandbox_mod = evaluator2
+
     if args.use_offline_grpo:
         from llmsr.offline_grpo_sampler import OfflineGRPOHuggingFaceLLM
         llm_class = OfflineGRPOHuggingFaceLLM
@@ -44,14 +47,15 @@ if __name__ == '__main__':
         llm_class = sampler.HuggingFaceLLM
         print("Using standard HuggingFace model")
         
-    class_config = config.ClassConfig(llm_class=llm_class, sandbox_class=evaluator.LocalSandbox)
+    class_config = config.ClassConfig(llm_class=llm_class, sandbox_class=sandbox_mod.LocalSandbox)
     config = config.Config(use_api = args.use_api, 
                            api_model = args.api_model,
                            hf_model = args.hf_model,
                            grpo_learning_rate = args.grpo_learning_rate,
                            use_offline_grpo = args.use_offline_grpo,
-                           use_atomsr = args.use_atomsr)
-    global_max_sample_num = 10000 
+                           use_atomsr = args.use_atomsr,
+                           vllm_model_name = args.vllm_model_name)
+    global_max_sample_num = 5000 
 
     # Load prompt specification
     with open(

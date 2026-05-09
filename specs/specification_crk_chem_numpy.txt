@@ -1,0 +1,77 @@
+"""
+Find the mathematical function skeleton for the time derivative dA/dt in a chemical reaction kinetics (CRK) benchmark,
+given observations of time t and species concentration A. The target is dA/dt (last column in train.csv).
+"""
+
+
+import numpy as np
+
+#Initialize parameters
+MAX_NPARAMS = 10
+PRAMS_INIT = [1.0]*MAX_NPARAMS
+# Keep each param in [-PARAM_BOUND, PARAM_BOUND] during fit so exp/sinh/log-heavy LLM
+# equations are less likely to blow up during BFGS-style exploration. Increase if fits saturate at bounds.
+PARAM_BOUND = 50.0
+_BAD_LOSS = 1e12
+
+
+@evaluate.run
+def evaluate(data: dict) -> float:
+    """ Evaluate the equation on data observations."""
+    
+    # Load data observations: inputs are (t, A), outputs are dA/dt
+    inputs, outputs = data['inputs'], data['outputs']
+    t, A = inputs[:,0], inputs[:,1]
+    
+    # Optimize parameters based on data
+    from scipy.optimize import minimize
+
+    def loss(params):
+        # errstate for equation + MSE: huge finite y_pred can make (y_pred-outputs)**2 overflow
+        # (still finite y_pred passes isfinite); scipy fdiff then hits invalid subtract.
+        with np.errstate(all="ignore"):
+            y_pred = equation(t, A, params)
+            if not np.all(np.isfinite(y_pred)):
+                return _BAD_LOSS
+            mse = np.mean((y_pred - outputs) ** 2)
+        if not np.isfinite(mse):
+            return _BAD_LOSS
+        return float(mse)
+
+    loss_partial = lambda params: loss(params)
+    x0 = np.clip(np.asarray(PRAMS_INIT, dtype=float), -PARAM_BOUND, PARAM_BOUND)
+    bounds = [(-PARAM_BOUND, PARAM_BOUND)] * MAX_NPARAMS
+    # result = minimize(loss_partial, [1.0]*MAX_NPARAMS, method='BFGS')
+    result = minimize(
+        loss_partial,
+        x0,
+        method="L-BFGS-B",
+        bounds=bounds,
+        options={"maxiter": 500},
+    )
+    
+    # Return evaluation score
+    optimized_params = result.x
+    loss = result.fun
+
+    if np.isnan(loss) or np.isinf(loss):
+        return None
+    else:
+        return -loss
+
+
+
+@equation.evolve
+def equation(t: np.ndarray, A: np.ndarray, params: np.ndarray) -> np.ndarray:
+    """ Mathematical model for dA/dt as a function of time and concentration.
+
+    Args:
+        t: Time observations.
+        A: Species concentration observations.
+        params: Array of numeric constants or parameters to be optimized
+
+    Return:
+        Predicted dA/dt at each observation.
+    """
+    dA_dt = params[0] * t + params[1] * A + params[2]
+    return dA_dt

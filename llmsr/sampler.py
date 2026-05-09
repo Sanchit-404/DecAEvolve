@@ -30,7 +30,17 @@ import json
 import http.client
 import os
 from accelerate import infer_auto_device_map
+
+
+def _llmsr_completions_url() -> str:
+    """Local completion server (default :5000); override with LLMSR_COMPLETIONS_HOST / LLMSR_COMPLETIONS_PORT."""
+    host = os.environ.get("LLMSR_COMPLETIONS_HOST", "127.0.0.1")
+    port = os.environ.get("LLMSR_COMPLETIONS_PORT", "5000")
+    return f"http://{host}:{port}/completions"
 from accelerate import dispatch_model
+import aiohttp
+import asyncio
+
 
 # Conditional imports to avoid dependency issues
 try:
@@ -374,7 +384,9 @@ def _extract_body_v2(sample: str, config: "config_lib.Config") -> str:
     if not config.use_api:
         # Optionally re-indent to 4 spaces (legacy behavior)
         code = "\n".join(("    " + l.strip() if l.strip() else "") for l in code.splitlines())
+    
     return code
+
 
 
 def _extract_body(sample: str, config: "config_lib.Config") -> str:
@@ -561,6 +573,7 @@ def _extract_body(sample: str, config: "config_lib.Config") -> str:
 
     # ---------- Main extraction logic ----------
     func_start = find_func_start(lines)
+    
 
     if func_start is None:
         # No function found at all: treat entire sample as a continuation body and cut after first `return`
@@ -586,11 +599,42 @@ def _extract_body(sample: str, config: "config_lib.Config") -> str:
             cleaned.append(ln)
         cleaned = strip_trailing_blanks(cleaned)
         code = "\n".join(dedent_block(cleaned)).strip()
-        if not code and config.use_api:
+        if not code:
             return ""
         if not code:
             return sample.strip()
+        
+        
+        # If the code is wrapped in a ```python ... ``` code block, extract only the body
+        import re
+        code_block_match = re.match(r"^```(?:python)?\s*([\s\S]*?)\s*```$", code.strip(), re.DOTALL)
+        if code_block_match:
+            code = code_block_match.group(1).strip("\n")
+        code_block_match = re.match(r"^```(?:python)?\s*([\s\S]*?)\s*$", code.strip(), re.DOTALL)
+        if code_block_match:
+            code = code_block_match.group(1).strip("\n")
+        lines = code.splitlines()
+        if not lines:
+            return ""
+        has_return = any(l.strip().startswith("return") for l in lines if l.strip() and not l.strip().startswith("#"))
+        if not has_return and lines:
+            *body, last = lines
+            last_stripped = last.strip()
+            if "=" in last_stripped:
+                # If the last line is in the form "... = ...", extract the variable name before '='
+                var_name = last_stripped.split("=", 1)[0].strip()
+                # Only add return if var_name is a valid identifier
+                if var_name and var_name.replace("_", "").isalnum():
+                    code = "\n".join(body + [last, f"return {var_name}"])
+                else:
+                    # fallback: just add return to the last line
+                    code = "\n".join(body + [f"return {last_stripped}"])
+            elif not last_stripped.startswith("return"):
+                code = "\n".join(body + [f"return {last_stripped}"])
+            else:
+                code = "\n".join(body + [last])
         code = "\n".join(("    " + l.strip() if l.strip() else "") for l in code.splitlines())
+
         return code
 
     # There is a function: first try to extract its body as before
@@ -624,8 +668,6 @@ def _extract_body(sample: str, config: "config_lib.Config") -> str:
 
     body_lines = strip_trailing_blanks(body_lines)
     if not body_lines:
-        if config.use_api:
-            return ""
         return sample.strip()
 
     dedented = [(l[body_indent:] if l.startswith(" " * body_indent) else l.lstrip()) if l.strip() else "" for l in body_lines]
@@ -635,13 +677,44 @@ def _extract_body(sample: str, config: "config_lib.Config") -> str:
     dedented = truncate_after_first_return(dedented)
 
     code = "\n".join(dedented).strip()
-    if not code and config.use_api:
+    if not code:
         return ""
     if not code:
         return sample.strip()
-    if not config.use_api:
-        code = "\n".join(("    " + l.strip() if l.strip() else "") for l in code.splitlines())
+
+    # If the code is wrapped in a ```python ... ``` code block, extract only the body
+    import re
+    code_block_match = re.match(r"^```(?:python)?\s*([\s\S]*?)\s*```$", code.strip(), re.DOTALL)
+    if code_block_match:
+        code = code_block_match.group(1).strip("\n")
+    code_block_match = re.match(r"^```(?:python)?\s*([\s\S]*?)\s*$", code.strip(), re.DOTALL)
+    if code_block_match:
+        code = code_block_match.group(1).strip("\n")
+    lines = code.splitlines()
+    if not lines:
+        return ""
+    has_return = any(l.strip().startswith("return") for l in lines if l.strip() and not l.strip().startswith("#"))
+    if not has_return and lines:
+        *body, last = lines
+        last_stripped = last.strip()
+        if "=" in last_stripped:
+            # If the last line is in the form "... = ...", extract the variable name before '='
+            var_name = last_stripped.split("=", 1)[0].strip()
+            # Only add return if var_name is a valid identifier
+            if var_name and var_name.replace("_", "").isalnum():
+                code = "\n".join(body + [last, f"return {var_name}"])
+            else:
+                # fallback: just add return to the last line
+                code = "\n".join(body + [f"return {last_stripped}"])
+        elif not last_stripped.startswith("return"):
+            code = "\n".join(body + [f"return {last_stripped}"])
+        else:
+            code = "\n".join(body + [last])
+    code = "\n".join(("    " + l.strip() if l.strip() else "") for l in code.splitlines())
+
     return code
+
+
 
 
 class LocalLLM(LLM):
@@ -652,7 +725,7 @@ class LocalLLM(LLM):
         """
         super().__init__(samples_per_prompt)
 
-        url = "http://127.0.0.1:5000/completions"
+        url = _llmsr_completions_url()
         instruction_prompt = ("You are a helpful assistant tasked with discovering mathematical function structures for scientific systems. \
                              Complete the 'equation' function below, considering the physical meaning and relationships of inputs.\n\n")
         self._batch_inference = batch_inference
@@ -677,15 +750,16 @@ class LocalLLM(LLM):
                 all_samples = []
                 # response from llm server
                 if self._batch_inference:
-                    response = self._do_request(prompt)
+                    response = self._do_request_vllm(prompt)
                     for res in response:
                         all_samples.append(res)
                 
                 else:
                     for _ in range(self._samples_per_prompt):
-                        response = self._do_request(prompt)
+                        response = self._do_request_vllm(prompt)
                         all_samples.append(response)
 
+                
                 # trim equation program skeleton body from samples
                 if self._trim:
                     all_samples = [_extract_body(sample, config) for sample in all_samples]
@@ -780,6 +854,11 @@ class HuggingFaceLLM(LLM):
         if model_name is None:
             model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
             
+        url = _llmsr_completions_url()
+        #osc1-3b
+        # url = "https://reddy-lab--llm-sr2l-all-models-optimized-serve-3b-oscillator1.modal.run/"
+        
+        self._url = url
         self.model_name = model_name
         self._batch_inference = batch_inference
         self._trim = trim
@@ -800,11 +879,12 @@ class HuggingFaceLLM(LLM):
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(model_name)
             self.use_multi_gpu = torch.cuda.device_count() > 1 or os.environ.get('ACCELERATE_USE_MULTI_GPU', 'false').lower() == 'true'
+            # breakpoint()
             
             # Special handling for LLaMA models with rope_scaling issues
             model_kwargs = {
                 # "attn_implementation": "flash_attention_2",
-                'torch_dtype': torch.float16 if torch.cuda.is_available() else torch.float32,
+                # 'torch_dtype': torch.float16 if torch.cuda.is_available() else torch.float32,
                 # 'device_map': "auto" if torch.cuda.is_available() else None,
                 'trust_remote_code': True,
                 'low_cpu_mem_usage': True,
@@ -824,26 +904,30 @@ class HuggingFaceLLM(LLM):
             #     except ImportError:
             #         pass
             
-            if self.use_multi_gpu:
-                # model_kwargs['device_map'] = 'auto'
-                # model_kwargs['device_map'] = {"": 0}
-                # Store that we're using distributed model
-                self.is_distributed = True
-            else:
-                # Single GPU or CPU setup
-                self.is_distributed = False
+            # if self.use_multi_gpu:
+            #     model_kwargs['device_map'] = 'auto'
+            #     # model_kwargs['device_map'] = {"": 0}
+            #     # Store that we're using distributed model
+            #     self.is_distributed = True
+            # else:
+            #     # Single GPU or CPU setup
+            #     self.is_distributed = False
                 
 
             ############# ADDED FOR ANALYSIS ########################
-            model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+            # Previously loaded the full weights twice (orphan first load + device_map load). Qwen 3B often
+            # survived; Llama 3.1 8B frequently stalled after the second tqdm (VRAM/driver + GRPOTrainer).
+            # model = AutoModelForCausalLM.from_pretrained(model_name,
+            #                                             #  load_in_8bit=True,
+            #                                             **model_kwargs)
             # device_map=infer_auto_device_map(model)
-            device_map='cuda'
+            # device_map='cuda'
+            device_map = "auto"
             self.model = AutoModelForCausalLM.from_pretrained(
-                model_name, 
+                model_name,
                 device_map=device_map,
-                trust_remote_code=True,
-                torch_dtype=torch.float16,  # Use half precision
-                low_cpu_mem_usage=True,
+                # torch_dtype=torch.float16,  # Use half precision
+                **model_kwargs,
             )
             #########################################################
 
@@ -892,34 +976,165 @@ class HuggingFaceLLM(LLM):
         prompt = '\n'.join([self._instruction_prompt, prompt])
         
         while True:
-            try:
-                all_samples = []
-                # response from llm model
-                if self._batch_inference:
-                    response = self._do_request(prompt)
-                    for res in response:
-                        all_samples.append(res)
-                        
-                else:
-                    for _ in range(self._samples_per_prompt):
-                        response = self._do_request(prompt)
-                        all_samples.append(response)
+            # try:
+            all_samples = []
+            # response from llm model
+            if self._batch_inference:
+                # response = self._do_request(prompt)
+                response = self._do_request_vllm_old(prompt,config)
+                for res in response:
+                    all_samples.append(res)
+                    
+            else:
+                for _ in range(self._samples_per_prompt):
+                    # response = self._do_request(prompt)
+                    response = self._do_request_vllm_old(prompt,config)
+                    all_samples.append(response)
 
-                # breakpoint()
-                # trim equation program skeleton body from samples
-                if self._trim:
-                    all_samples = [_extract_body(sample, config) for sample in all_samples]
-                
-                # breakpoint()
-                return all_samples
-            except Exception:
-                continue
+            # breakpoint()
+            # trim equation program skeleton body from samples
+            if self._trim:
+                all_samples = [_extract_body(sample, config) for sample in all_samples]
+            
+            # breakpoint()
+            return all_samples
+            # except Exception:
+            #     continue
 
     def _draw_samples_api(self, prompt: str, config: config_lib.Config) -> Collection[str]:
         """API sampling method - placeholder for consistency."""
         # Just call local method for now
         return self._draw_samples_local(prompt, config)
 
+
+
+    def _do_request_vllm_old(self, content: str, config: config_lib.Config) -> str:
+        content = content.strip('\n').strip()
+        
+        # Convert to OpenAI chat format for vLLM
+        messages = [{"role": "user", "content": content}]
+        
+        data = {
+            "model": config.vllm_model_name,  # vLLM serves the loaded model as "default"
+            "messages": messages,
+            "max_tokens": 2048,
+            "temperature": 0.8,
+            "top_p": 0.9,
+            "n": self._samples_per_prompt if self._batch_inference else 1,
+            "stream": False
+        }
+        
+        headers = {'Content-Type': 'application/json'}
+        MODELS = {
+            "3b_bactgrow":    "https://reddy-lab--llm-sr2l-all-models-optimized-serve-3b-bactgrow.modal.run",
+            "3b_stressstrain":"https://reddy-lab--llm-sr2l-all-models-optimized-serve-3b-stressstrain.modal.run",
+            "7b_bactgrow":    "https://reddy-lab--llm-sr2l-all-models-optimized-serve-7b-bactgrow.modal.run",
+            "7b_stressstrain":"https://reddy-lab--llm-sr2l-all-models-optimized-serve-7b-stressstrain.modal.run",
+            "ft_1_5b_oscillator1_300": "https://reddy-lab--llm-sr2l-mixed-optimized-serve-ft-1-5b-oscill-ce1285.modal.run",
+            "ft_1_5b_oscillator2_350": "https://reddy-lab--llm-sr2l-mixed-optimized-serve-ft-1-5b-oscill-e100e1.modal.run",
+            "ft_1_5b_bactgrow_350":    "https://reddy-lab--llm-sr2l-mixed-optimized-serve-ft-1-5b-bactgrow-350.modal.run",
+            "ft_1_5b_stressstrain_350":"https://reddy-lab--llm-sr2l-mixed-optimized-serve-ft-1-5b-stress-8da978.modal.run",
+            "qwen_0_5b": "https://reddy-lab--llm-sr2l-base-qwen-models-serve-qwen-0-5b.modal.run",
+            "qwen_1_5b": "https://reddy-lab--llm-sr2l-base-qwen-models-serve-qwen-1-5b.modal.run",
+            "qwen_3b":   "https://reddy-lab--llm-sr2l-base-qwen-models-serve-qwen-3b.modal.run",
+            "qwen_7b":   "https://reddy-lab--llm-sr2l-base-qwen-models-serve-qwen-7b.modal.run",
+            "stress_3b": "https://reddy-lab--merged-models-serve-stress-3b.modal.run",
+            "stress_7b": "https://reddy-lab--merged-models-serve-stress-7b.modal.run",
+            "bact_3b": "https://reddy-lab--merged-models-serve-bact-3b.modal.run",
+            "bact_7b": "https://reddy-lab--merged-models-serve-bact-7b.modal.run",
+            '3b_oscillator1': 'https://reddy-lab--llm-sr2l-all-models-optimized-v2-serve-3b-o1.modal.run',
+            '3b_oscillator2': 'https://reddy-lab--llm-sr2l-all-models-optimized-v2-serve-3b-o2.modal.run',
+            '7b_oscillator1': 'https://reddy-lab--llm-sr2l-all-models-optimized-v2-serve-7b-o1.modal.run',
+            '7b_oscillator2': 'https://reddy-lab--llm-sr2l-all-models-optimized-v2-serve-7b-o2.modal.run',
+        }
+        # breakpoint()
+        url = MODELS[config.vllm_model_name]
+        self._url = url
+        
+        # custom separate vllm server
+        response = requests.post(f"{self._url}/v1/chat/completions", data=json.dumps(data), headers=headers)
+        
+        # trl vllm server:
+        # response = requests.post(f"{self._url}/update_named_param/", data=json.dumps(data), headers=headers)
+        
+        if response.status_code == 200:
+            response_data = response.json()
+            content_list = []
+            
+            for choice in response_data.get("choices", []):
+                if "message" in choice and "content" in choice["message"]:
+                    content_list.append(choice["message"]["content"])
+            
+            return content_list if self._batch_inference else content_list[0]
+        else:
+            raise Exception(f"HTTP {response.status_code}: {response.text}")
+    
+    
+    
+    def _do_request_vllm(self, content: str, config: config_lib.Config) -> str:
+        """
+        Synchronous wrapper for async vLLM request using aiohttp.
+        Uses the model endpoint specified by self._url and model name by self._model_name.
+        """
+        content = content.strip('\n').strip()
+        n = self._samples_per_prompt if self._batch_inference else 1
+
+        # Determine model name and url
+        # If self._model_name and self._url are set, use them; otherwise fallback to "default" and self._url
+        model_name = config.vllm_model_name
+        url = getattr(self, "_url", None)
+        if url is None:
+            raise ValueError("Model endpoint URL (_url) must be set for vLLM request.")
+
+        import aiohttp
+        import asyncio
+
+        # Model endpoints (copied from provided code)
+        MODELS = {
+            "3b_oscillator1": "https://reddy-lab--llm-sr2l-all-models-optimized-serve-3b-oscillator1.modal.run",
+            "3b_oscillator2": "https://reddy-lab--llm-sr2l-all-models-optimized-serve-3b-oscillator2.modal.run", 
+            "3b_bactgrow": "https://reddy-lab--llm-sr2l-all-models-optimized-serve-3b-bactgrow.modal.run",
+            "3b_stressstrain": "https://reddy-lab--llm-sr2l-all-models-optimized-serve-3b-stressstrain.modal.run",
+            "7b_oscillator1": "https://reddy-lab--llm-sr2l-all-models-optimized-serve-7b-oscillator1.modal.run",
+            "7b_oscillator2": "https://reddy-lab--llm-sr2l-all-models-optimized-serve-7b-oscillator2.modal.run",
+            "7b_bactgrow": "https://reddy-lab--llm-sr2l-all-models-optimized-serve-7b-bactgrow.modal.run",
+            "7b_stressstrain": "https://reddy-lab--llm-sr2l-all-models-optimized-serve-7b-stressstrain.modal.run"
+        }
+        
+        async def _query_model(session, model_name, url, prompt, n=1):
+            payload = {
+                "model": model_name,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 1024,
+                "temperature": 0.8,
+                "top_p": 0.9,
+                "n": n,
+                "stream": False
+            }
+            async with session.post(f"{url}/v1/chat/completions", json=payload) as r:
+                return await r.json()
+        
+        async def _main():
+            async with aiohttp.ClientSession() as session:
+                response_data = await _query_model(session, model_name, url, content, n=10)
+                content_list = []
+                for choice in response_data.get("choices", []):
+                    if "message" in choice and "content" in choice["message"]:
+                        content_list.append(choice["message"]["content"])
+                return content_list if self._batch_inference else (content_list[0] if content_list else "")
+
+        # breakpoint()
+        # Run the async function synchronously
+        # try:
+        return asyncio.run(_main())
+        # except RuntimeError:
+        #     # If already in an event loop (e.g. Jupyter), use nest_asyncio
+        #     import nest_asyncio
+        #     nest_asyncio.apply()
+        #     return asyncio.get_event_loop().run_until_complete(_main())
+    
+    
+    
     def _do_request(self, content: str) -> str:
         """Generate response using HuggingFace model - matches LocalLLM _do_request signature."""
         content = content.strip('\n').strip()
@@ -929,20 +1144,23 @@ class HuggingFaceLLM(LLM):
         # Generate using HuggingFace model
         inputs = self.tokenizer(content, return_tensors="pt", 
                                 truncation=True, 
-                                max_length=512,
+                                max_length=2048,
                                 padding=True,
                                 add_special_tokens=True
         )
         # if self.is_distributed:
         #     # For distributed models, move to the device of the first parameter
         #     target_device = infer_auto_device_map(self.model)
+        #     print("TARGET DEVICE:", target_device)
         #     inputs = {k: v.to(target_device) for k, v in inputs.items()}
         # else:
         #     # For single device models
         #     inputs = {k: v.to(self.device) for k, v in inputs.items()}
         
-        # Move inputs to the same device as model (CUDA, MPS, or CPU)
-        inputs = {k: v.to("cuda") for k, v in inputs.items()}
+        
+        # Match model placement (CPU when no GPU, or device_map shards on GPU).
+        _dev = next(self.model.parameters()).device
+        inputs = {k: v.to(_dev) for k, v in inputs.items()}
         
         with torch.no_grad():
             if self._batch_inference:
@@ -952,7 +1170,7 @@ class HuggingFaceLLM(LLM):
                 # breakpoint()
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=512,
+                    max_new_tokens=1024,
                     num_return_sequences=repeat_prompt,
                     do_sample=True,
                     temperature=0.8,
@@ -976,7 +1194,7 @@ class HuggingFaceLLM(LLM):
                 # Generate single sample
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=512,
+                    max_new_tokens=1024,
                     do_sample=True,
                     temperature=0.8,
                     top_p=0.9,

@@ -39,7 +39,7 @@ class ExperienceBufferConfig:
     functions_per_prompt: int = 2 ## change to 0 for LLMSR with GRPO
     num_islands: int = 10 
     reset_period: int = 4 * 60 * 60
-    cluster_sampling_temperature_init: float = 0.9 #0.1
+    cluster_sampling_temperature_init: float = 0.1 #0.1
     cluster_sampling_temperature_period: int = 30_000
 
 
@@ -64,7 +64,7 @@ class Config:
     experience_buffer: ExperienceBufferConfig = dataclasses.field(default_factory=ExperienceBufferConfig)
     num_samplers: int = 1 
     num_evaluators: int = 1
-    samples_per_prompt: int = 16 ## change to 16 for LLMSR with GRPO
+    samples_per_prompt: int = 10 ## change to 16 for LLMSR with GRPO
     evaluate_timeout_seconds: int = 30  
     use_api: bool = False
     api_model: str = "gpt-4o-mini"
@@ -72,6 +72,7 @@ class Config:
     grpo_learning_rate: float = 1e-6
     use_offline_grpo: bool = False
     use_atomsr: bool = False
+    vllm_model_name: str = "default"
 
 
 @dataclasses.dataclass()

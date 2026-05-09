@@ -1,19 +1,158 @@
 """ Offline GRPO sampler that uses LLM-SR samples as training dataset instead of generating new samples. """
 from __future__ import annotations
 
+import os
 import numpy as np
 import torch
 import time
-from typing import Sequence, Type, List, Dict, Any
+from typing import Sequence, Type, List, Dict, Any, Optional
 import re
 from .sampler import HuggingFaceLLM, Sampler, LLM
 from llmsr import evaluator, buffer, config as config_lib
 from trl import GRPOConfig, GRPOTrainer
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, PeftModel
+
+try:
+    from accelerate.utils import is_peft_model
+except ImportError:
+    def is_peft_model(model):  # type: ignore[misc]
+        return getattr(model, "peft_config", None) is not None
 from datasets import Dataset
 from dataclasses import dataclass, field
 from accelerate import dispatch_model
 
+try:
+    from transformers.integrations import WandbCallback, rewrite_logs
+except ImportError:
+    WandbCallback = None  # type: ignore[misc, assignment]
+    rewrite_logs = None  # type: ignore[misc, assignment]
+
+
+def _vllm_server_port_from_env() -> int:
+    """TRL GRPO uses this port to reach trl vllm-serve; override with VLLM_SERVER_PORT."""
+    return int(os.environ.get("VLLM_SERVER_PORT", "8000"))
+
+
+def _vllm_server_base_url_from_env() -> str:
+    # 127.0.0.1 avoids localhost resolving to ::1 while vLLM/curl use IPv4 (Slurm health checks).
+    return f"http://127.0.0.1:{_vllm_server_port_from_env()}"
+
+
+def _vllm_close_weight_sync_session() -> None:
+    # Reverted: POST /close_communicator/ between GRPO episodes (TRL vLLM weight-sync / NCCL group reuse).
+    # Restore if second+ episodes hang with TCPStore / NCCL errors:
+    # try:
+    #     import requests
+    #     requests.post(
+    #         f"{_vllm_server_base_url_from_env()}/close_communicator/",
+    #         timeout=120,
+    #     )
+    # except Exception:
+    #     pass
+    pass
+
+
+def _unwrap_to_peft_model(model: Any) -> Optional[PeftModel]:
+    """
+    Return the inner PeftModel if `model` is a PeftModel or wraps one (e.g. torch.compile _orig_mod).
+    Used so we do not call get_peft_model again when the top-level type is not PeftModel.
+    """
+    cur: Any = model
+    seen: set[int] = set()
+    for _ in range(8):
+        if not isinstance(cur, torch.nn.Module):
+            break
+        if id(cur) in seen:
+            break
+        seen.add(id(cur))
+        if isinstance(cur, PeftModel):
+            return cur
+        nxt = getattr(cur, "model", None)
+        if nxt is None:
+            nxt = getattr(cur, "_orig_mod", None)
+        if nxt is None:
+            break
+        cur = nxt
+    return None
+
+
+def _model_already_has_peft_training(model: Any) -> bool:
+    """True if LoRA/PEFT is already applied; then pass peft_config=None into GRPOTrainer."""
+    if _unwrap_to_peft_model(model) is not None:
+        return True
+    return bool(is_peft_model(model))
+
+
+def _grpo_offline_max_steps() -> int:
+    """Steps per offline GRPO block (one trainer). Override with env GRPO_OFFLINE_MAX_STEPS."""
+    return max(1, int(os.environ.get("GRPO_OFFLINE_MAX_STEPS", "64")))
+
+
+def _grpo_offline_warmup_steps(max_steps: int) -> int:
+    """
+    Must be << max_steps per episode. Using warmup_steps=200 with max_steps=8 restarts LR near zero
+    every new GRPOTrainer and makes training look wildly discontinuous.
+    """
+    if max_steps < 2:
+        return 0
+    if int(os.environ.get("GRPO_OFFLINE_WARMUP_STEPS", "-1")) >= 0:
+        return min(int(os.environ["GRPO_OFFLINE_WARMUP_STEPS"]), max_steps - 1)
+    cap = 8 if max_steps <= 128 else min(200, max(8, max_steps // 4))
+    return min(cap, max_steps - 1)
+
+
+def _grpo_report_to() -> str | list:
+    """Avoid HF WandbCallback when no API key (Slurm batch jobs often have none)."""
+    if os.environ.get("WANDB_API_KEY", "").strip():
+        return "wandb"
+    return []
+
+
+def _vllm_group_port_base() -> int:
+    """TRL <-> vLLM NCCL TCP port base; must differ per concurrent job on the same node."""
+    raw = os.environ.get("VLLM_GROUP_PORT_BASE")
+    if raw is not None and str(raw).strip() != "":
+        b = int(str(raw).strip())
+        return min(max(b, 1024), 64000)
+    jid = os.environ.get("SLURM_JOB_ID") or str(os.getpid())
+    return 52000 + (int(jid) % 12000)
+
+
+def _vllm_group_port_for_episode(episode: int) -> int:
+    p = _vllm_group_port_base() + int(episode) * 100
+    return min(max(p, 1024), 65000)
+
+
+class OfflineGRPOContinuousWandbCallback(WandbCallback):
+    """
+    Same as WandbCallback but logs train/global_step as (episode_offset + trainer step)
+    so multiple GRPOTrainer episodes appear as one continuous run on the W&B x-axis.
+    """
+
+    def __init__(self, step_offset: int):
+        super().__init__()
+        self.step_offset = step_offset
+
+    def on_log(self, args, state, control, model=None, logs=None, **kwargs):
+        single_value_scalars = [
+            "train_runtime",
+            "train_samples_per_second",
+            "train_steps_per_second",
+            "train_loss",
+            "total_flos",
+        ]
+        if self._wandb is None:
+            return
+        if not self._initialized:
+            self.setup(args, state, model)
+        if state.is_world_process_zero:
+            for k, v in (logs or {}).items():
+                if k in single_value_scalars:
+                    self._wandb.run.summary[k] = v
+            non_scalar_logs = {k: v for k, v in (logs or {}).items() if k not in single_value_scalars}
+            non_scalar_logs = rewrite_logs(non_scalar_logs)
+            gstep = self.step_offset + int(state.global_step)
+            self._wandb.log({**non_scalar_logs, "train/global_step": gstep})
 
 
 class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
@@ -29,6 +168,8 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
         Initialize offline GRPO-enabled HuggingFace model.
         """
         super().__init__(samples_per_prompt, model_name, batch_inference, trim)
+        # Ensure instance has problem_name even if only class attr was set upstream.
+        self.problem_name = getattr(self, "problem_name", getattr(self.__class__, "problem_name", "unknown"))
         
         # self._setup_lora()
         # On Apple MPS, avoid float16 training instability
@@ -41,6 +182,8 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
         self.offline_dataset = []
         self.training_episodes = 0
         self.evaluators = None  # Will be set by sampler
+        # One W&B run name for the whole process (do not rotate per GRPO episode).
+        self._wandb_session_id = int(time.time() * 1000)
         self._setup_grpo_trainer(learning_rate=learning_rate)
         
         print("Offline GRPO-enabled HuggingFace model initialized successfully")
@@ -65,13 +208,13 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
     
     def _setup_grpo_trainer(self, learning_rate=1e-6):
         """Setup GRPO trainer configuration for offline training (version-compatible)."""
-        # if torch.cuda.is_available():
-        #     optim = "adamw_8bit"
-        #     use_bf16 = True
-        # else:
-        #     # Use standard AdamW for CPU/MPS compatibility
-        #     optim = "adamw_torch"
-            # use_bf16 = False
+        if torch.cuda.is_available():
+            optim = "adamw_8bit"
+            use_bf16 = True
+        else:
+            # Use standard AdamW for CPU/MPS compatibility
+            optim = "adamw_torch"
+            use_bf16 = False
         
         # Build kwargs and filter by GRPOConfig signature for compatibility across TRL versions
         import inspect
@@ -82,13 +225,14 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
         lr_scheduler_kwargs_dict = lr_scheduler_kwargs.default_factory()
         token_entropy_percentile_threshold = 0.0 # from https://huggingface/papers/2506.01939
         # loss_type = `bnpo` => helps remove length bias if per_device_train_batch_size > 1
-    
-        
+        _ms = _grpo_offline_max_steps()
+        _wu = _grpo_offline_warmup_steps(_ms)
+
         cfg_kwargs = {
             # 'output_dir': f"./grpo_checkpoints/{self.problem_name}-adaptive/run4/episode{self.training_episodes}",
             'learning_rate': learning_rate,
             'lr_scheduler_type': lr_scheduler_type,
-            'warmup_steps': lr_scheduler_kwargs_dict["num_warmup_steps"],
+            'warmup_steps': _wu,
             'lr_scheduler_kwargs': {k: v for k,v in lr_scheduler_kwargs_dict.items() if k != "num_warmup_steps"},
             'mask_truncated_completions': False,
             'temperature': 0.8,
@@ -100,23 +244,27 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
             'max_completion_length': 768,
             'num_generations': 64,  # Reduced to match batch size
             'logging_steps': 1,
-            'save_steps': 8,
+            'save_steps': _ms,
             'dataloader_num_workers': 0,
             'greater_is_better': True,
             # Ensure finite training when dataloader has no length
-            'max_steps': 8,
+            'max_steps': _ms,
             'scale_rewards': True,
-            'max_grad_norm': 1.0,
+            # 'max_grad_norm': 1.0,
             'beta': 0.05,
             'epsilon': 0.2,
             'disable_dropout': True,
-            'report_to': "wandb",
-            #vllm
-            # 'use_vllm': True,
-            # 'vllm_host': "localhost",
-            # 'vllm_port': 8000,
-            # "vllm_mode": "colocate", 
-            # "vllm_server_timeout": 1200
+            'report_to': _grpo_report_to(),
+            # vllm
+            "use_vllm": True,
+            "vllm_mode": "server",
+            "vllm_server_base_url": _vllm_server_base_url_from_env(),
+            "vllm_server_host": "127.0.0.1",
+            "vllm_server_port": _vllm_server_port_from_env(),
+            "vllm_server_timeout": 1200,
+            "vllm_group_port": _vllm_group_port_for_episode(0),
+            "vllm_importance_sampling_correction": os.environ.get("GRPO_VLLM_IS_CORRECTION", "").strip().lower()
+            in ("1", "true", "yes"),
         }
         # cfg_kwargs['output_dir'] = f"./grpo_checkpoints/{self.problem_name}-adaptive-{self.model_name}-r{8}-ga{cfg_kwargs['gradient_accumulation_steps']}-g{cfg_kwargs['num_generations']}/run5/episode{self.training_episodes}"
 
@@ -151,11 +299,13 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
         )
         lr_scheduler_kwargs_dict = lr_scheduler_kwargs.default_factory()
         token_entropy_percentile_threshold = 0.0 # from https://huggingface/papers/2506.01939
-        
+        _ms = _grpo_offline_max_steps()
+        _wu = _grpo_offline_warmup_steps(_ms)
+
         cfg_kwargs = {
             'learning_rate': 1e-6,
             'lr_scheduler_type': lr_scheduler_type,
-            'warmup_steps': lr_scheduler_kwargs_dict["num_warmup_steps"],
+            'warmup_steps': _wu,
             'lr_scheduler_kwargs': {k: v for k,v in lr_scheduler_kwargs_dict.items() if k != "num_warmup_steps"},
             'mask_truncated_completions': False,
             'temperature': 0.8,
@@ -167,21 +317,36 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
             'max_completion_length': 768,
             'num_generations': 64,  # Reduced to match batch size
             'logging_steps': 1,
-            'save_steps': 8,
+            'save_steps': _ms,
             'dataloader_num_workers': 0,
             'greater_is_better': True,
             # Ensure finite training when dataloader has no length
-            'max_steps': 8,
+            'max_steps': _ms,
             'scale_rewards': True,
-            'max_grad_norm': 1.0,
+            # 'max_grad_norm': 1.0,
             'beta': 0.05,
             'epsilon': 0.2,
             'disable_dropout': True,
-            'report_to': "wandb",
+            'report_to': _grpo_report_to(),
             # Unique run_name for each episode
+            # vllm
+            "use_vllm": True,
+            "vllm_mode": "server",
+            "vllm_server_base_url": _vllm_server_base_url_from_env(),
+            "vllm_server_host": "127.0.0.1",
+            "vllm_server_port": _vllm_server_port_from_env(),
+            "vllm_server_timeout": 1200,
+            "vllm_group_port": _vllm_group_port_for_episode(self.training_episodes),
+            "vllm_importance_sampling_correction": os.environ.get("GRPO_VLLM_IS_CORRECTION", "").strip().lower()
+            in ("1", "true", "yes"),
         }
         cfg_kwargs['output_dir']= f"./grpo_checkpoints/{self.problem_name}-adaptive-{self.model_name.replace('Qwen/', '')}-r{lora_cfg.r}-ga{cfg_kwargs['gradient_accumulation_steps']}-g{cfg_kwargs['num_generations']}/episode{self.training_episodes}"
-        cfg_kwargs['run_name']= f"episode-{self.training_episodes}-{self.model_name}-r{lora_cfg.r}-ga{cfg_kwargs['gradient_accumulation_steps']}-ng{cfg_kwargs['num_generations']}-{int(time.time() * 1000)}"
+        # Stable run name so W&B stays on one run across episodes; use training_episodes in metrics if needed.
+        # cfg_kwargs['run_name']= f"episode-{self.training_episodes}-{self.model_name}-r{lora_cfg.r}-ga{cfg_kwargs['gradient_accumulation_steps']}-ng{cfg_kwargs['num_generations']}-{int(time.time() * 1000)}"
+        cfg_kwargs['run_name'] = (
+            f"grpo-{self.problem_name}-{self.model_name.replace('Qwen/', '').replace('/', '-')}"
+            f"-r{lora_cfg.r}-ga{cfg_kwargs['gradient_accumulation_steps']}-sess{self._wandb_session_id}"
+        )
 
         sig = inspect.signature(GRPOConfig.__init__)
         filtered_kwargs = {k: v for k, v in cfg_kwargs.items() if k in sig.parameters}
@@ -831,24 +996,50 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
                 use_rslora="True",
             )
 
+            # _vllm_close_weight_sync_session()  # reverted (was before new GRPO episode for NCCL weight-sync)
+
             # Create a new config for this training episode
             import os
             import wandb
+            # from c1_aiml_aem import wandb
             
-            # Finish any existing WandB run to ensure clean separation
-            if wandb.run is not None:
-                print(f"Finishing previous WandB run: {wandb.run.name}")
-                wandb.finish()
+            # Keep one W&B run for the whole pipeline; do not finish between GRPO episodes.
+            # if wandb.run is not None:
+            #     print(f"Finishing previous WandB run: {wandb.run.name}")
+            #     wandb.finish()
             
-            # Set WandB environment variables
-            os.environ["WANDB_PROJECT"] = f"llmsr-grpo-{self.problem_name}-adaptive-single-gpu"
-            os.environ["WANDB_MODE"] = "online"  # Ensure online mode
-            
+            if os.environ.get("WANDB_API_KEY", "").strip():
+                os.environ["WANDB_PROJECT"] = f"llmsr-grpo-{self.problem_name}-adaptive-single-gpu"
+                os.environ["WANDB_MODE"] = "online"
+            else:
+                print("WANDB_API_KEY unset: GRPO report_to=[] (no Weights & Biases logging).")
+
             # Create a fresh config with unique run_name for this episode
             episode_config = self._create_episode_config(lora_cfg)
             print(f"Created new GRPO config for episode {self.training_episodes} with run_name: {episode_config.run_name}")
             print(f"WandB project: {os.environ.get('WANDB_PROJECT', 'Not set')}")
             print(f"Current WandB run before training: {wandb.run.name if wandb.run else 'None'}")
+
+            # Plain HF models may expose PEFT helpers without any adapter loaded;
+            # disable_adapters() then raises ValueError("No adapter loaded...").
+            # if hasattr(self.model, "peft_config"):
+            #     self.model.disable_adapters()
+            if hasattr(self.model, "disable_adapters"):
+                try:
+                    self.model.disable_adapters()
+                except ValueError as e:
+                    if "No adapter loaded" not in str(e):
+                        raise
+
+            # After episode 1 the model is already a PeftModel; do not call get_peft_model again (stacked adapters).
+            _already_peft = _model_already_has_peft_training(self.model)
+            train_peft_cfg = None if _already_peft else lora_cfg
+
+            # GRPOTrainer re-runs add_adapter("ref", ...) when beta != 0; drop stale ref so episode 2+ does not stack.
+            _peft_for_ref = _unwrap_to_peft_model(self.model)
+            if _peft_for_ref is not None and getattr(episode_config, "beta", 0.0) != 0.0:
+                if "ref" in _peft_for_ref.peft_config:
+                    _peft_for_ref.delete_adapter("ref")
 
             self.grpo_trainer = GRPOTrainer(
                 model=self.model,
@@ -857,8 +1048,33 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
                 args=episode_config,
                 train_dataset=train_dataset,
                 processing_class=self.tokenizer,
-                peft_config=lora_cfg,
+                peft_config=train_peft_cfg,
             )
+            if hasattr(self.model, "enable_adapters"):
+                try:
+                    self.model.enable_adapters()
+                except ValueError as e:
+                    if "No adapter loaded" not in str(e):
+                        raise
+            # Replace default WandbCallback so logged global_step is offset per episode (one continuous chart).
+            if (
+                WandbCallback is not None
+                and rewrite_logs is not None
+                and getattr(episode_config, "report_to", None)
+            ):
+                rt = episode_config.report_to
+                uses_wandb = (isinstance(rt, str) and "wandb" in rt) or (
+                    isinstance(rt, (list, tuple)) and any("wandb" in str(x) for x in rt)
+                )
+                if uses_wandb:
+                    ms = getattr(episode_config, "max_steps", None) or _grpo_offline_max_steps()
+                    step_offset = self.training_episodes * int(ms)
+                    for cb in list(self.grpo_trainer.callback_handler.callbacks):
+                        if isinstance(cb, WandbCallback):
+                            self.grpo_trainer.remove_callback(cb)
+                    self.grpo_trainer.add_callback(
+                        OfflineGRPOContinuousWandbCallback(step_offset=step_offset)
+                    )
             print(f"WandB run after trainer creation: {wandb.run.name if wandb.run else 'None'}")
             print("Starting GRPO training...")
             self.grpo_trainer.train()
@@ -874,12 +1090,13 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
             self.grpo_trainer = None
             self.model.eval()
             print("Model set to evaluation mode")
+            # _vllm_close_weight_sync_session()  # reverted (was after trainer teardown)
             
-            # Finish WandB run for this episode
-            import wandb
-            if wandb.run is not None:
-                print(f"Finishing WandB run for episode {self.training_episodes}: {wandb.run.name}")
-                wandb.finish()
+            # Leave W&B run open across episodes; finish only when the process exits (or call wandb.finish() upstream).
+            # import wandb
+            # if wandb.run is not None:
+            #     print(f"Finishing WandB run for episode {self.training_episodes}: {wandb.run.name}")
+            #     wandb.finish()
         
         # Save the trained model
         # self.model.save_pretrained(f"./grpo_checkpoints/offline_episode_{self.training_episodes}")

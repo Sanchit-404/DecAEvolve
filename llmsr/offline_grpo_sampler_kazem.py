@@ -1,6 +1,7 @@
 """ Offline GRPO sampler that uses LLM-SR samples as training dataset instead of generating new samples. """
 from __future__ import annotations
 
+import os
 import numpy as np
 import torch
 import time
@@ -131,8 +132,8 @@ class OfflineGRPOHuggingFaceLLM(HuggingFaceLLM):
             'run_name': f"{self.model_name}-g8-r64",
             #vllm
             'use_vllm': True,
-            'vllm_host': "localhost",
-            'vllm_port': 8000,
+            'vllm_host': os.environ.get("VLLM_SERVER_HOST", "127.0.0.1"),
+            'vllm_port': int(os.environ.get("VLLM_SERVER_PORT", "8000")),
             "vllm_mode": "colocate", 
             "vllm_server_timeout": 1200
         }

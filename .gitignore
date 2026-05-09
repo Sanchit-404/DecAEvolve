@@ -1,3 +1,6 @@
+# Reference decaevolve-llama snapshot (extracted from decaevolve-llama.zip). Do not merge with main tree.
+external/decaevolve-llama/
+
 logs/
 grpo_reward_logs/
 grpo_checkpoints/
@@ -5,7 +8,34 @@ figs/
 wandb/
 rewards/
 
+# Local W&B API key (never commit)
+.wandb_api_key
+wandb_api_key.txt
+.hf_token
+hf_token.txt
+
+# Python / OS noise
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+*.egg-info/
+dist/
+build/
+
+# Large local archives (use README to obtain external tree)
+decaevolve-llama.zip
+
 *.ipynb
 
 plot-logs.py
 plot_rewards.py
+
+# CRK / benchmark CSVs (large; regenerate — see data/README.md and scripts/export_crk_dataset_from_hf.py)
+data/**
+!data/README.md
