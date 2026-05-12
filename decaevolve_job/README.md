@@ -8,7 +8,7 @@ Contents:
 - `main.py` — CLI entry (paths below)
 - `llmsr/` — pipeline, offline GRPO sampler, evaluators, etc.
 - `llm_engine/` — auxiliary engine module
-- `accelerate_*.yaml`, `run_grpo.sh`, `run_inf.sh` — optional helpers
+- `accelerate_*.yaml` — optional Accelerate configs
 
 ## Paths
 
