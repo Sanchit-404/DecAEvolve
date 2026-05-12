@@ -14,6 +14,8 @@
 #   CONDA_ROOT=...       Path containing etc/profile.d/conda.sh (default: search HOME).
 #   CONDA_ENV_NAME=llmsr
 #   VLLM_PORT=8001       Fixed port; otherwise picks a free port in 8000–8099.
+#   DECAEVOLVE_MAIN_PY=...  Override path to main.py (default: decaevolve_job/main.py, else external/...).
+#   MAX_SAMPLE_NUMS=...  If set, passed as --max_sample_nums (smoke tests / early stop).
 
 set -euo pipefail
 
@@ -43,10 +45,18 @@ fi
 echo "[crk-7b] LLMSR_GRPO_REWARD_SIGMA=${LLMSR_GRPO_REWARD_SIGMA}"
 echo "[crk-7b] LLMSR_DATALOADER_NUM_WORKERS=${LLMSR_DATALOADER_NUM_WORKERS}"
 
-if [ ! -f "${REPO_ROOT}/external/decaevolve-llama/decaevolve-llama/main.py" ]; then
-  echo "[crk-7b] ERROR: missing external/decaevolve-llama/decaevolve-llama/main.py — see README (external snapshot)." >&2
+MAIN_PY="${DECAEVOLVE_MAIN_PY:-}"
+if [ -z "${MAIN_PY}" ] && [ -f "${REPO_ROOT}/decaevolve_job/main.py" ]; then
+  MAIN_PY="${REPO_ROOT}/decaevolve_job/main.py"
+fi
+if [ -z "${MAIN_PY}" ] && [ -f "${REPO_ROOT}/external/decaevolve-llama/decaevolve-llama/main.py" ]; then
+  MAIN_PY="${REPO_ROOT}/external/decaevolve-llama/decaevolve-llama/main.py"
+fi
+if [ -z "${MAIN_PY}" ] || [ ! -f "${MAIN_PY}" ]; then
+  echo "[crk-7b] ERROR: no entrypoint main.py — add decaevolve_job/ or external/decaevolve-llama/... or set DECAEVOLVE_MAIN_PY." >&2
   exit 1
 fi
+echo "[crk-7b] MAIN_PY=${MAIN_PY}"
 
 if [ ! -f "./data/${CRK_TAG}/train.csv" ]; then
   echo "[crk-7b] ERROR: missing ./data/${CRK_TAG}/train.csv" >&2
@@ -210,9 +220,15 @@ while true; do
   sleep 2
 done
 
-echo "[crk-7b] Starting external main.py (${CRK_TAG}, atomsr, ${HF_MODEL}, n_prompts=${N_PROMPTS}) ..."
+echo "[crk-7b] Starting main.py (${CRK_TAG}, atomsr, ${HF_MODEL}, n_prompts=${N_PROMPTS}) ..."
 
-CUDA_VISIBLE_DEVICES="${TRAIN_GPU}" python -u external/decaevolve-llama/decaevolve-llama/main.py \
+_EXTRA_MAIN=()
+if [ -n "${MAX_SAMPLE_NUMS:-}" ]; then
+  _EXTRA_MAIN+=( --max_sample_nums "${MAX_SAMPLE_NUMS}" )
+  echo "[crk-7b] MAX_SAMPLE_NUMS=${MAX_SAMPLE_NUMS}"
+fi
+
+CUDA_VISIBLE_DEVICES="${TRAIN_GPU}" python -u "${MAIN_PY}" \
   --spec_path ./specs/specification_crk_chem_numpy.txt \
   --problem_name "${CRK_TAG}" \
   --use_offline_grpo True \
@@ -221,6 +237,7 @@ CUDA_VISIBLE_DEVICES="${TRAIN_GPU}" python -u external/decaevolve-llama/decaevol
   --hf_model "${HF_MODEL}" \
   --n_prompts "${N_PROMPTS}" \
   --use_wandb True \
-  --log_path "./logs/compare_${CRK_TAG}_offline_grpo_ext_atomsr_${SLURM_RUN_TAG}_${JOB_LOG_ID}"
+  --log_path "./logs/compare_${CRK_TAG}_offline_grpo_ext_atomsr_${SLURM_RUN_TAG}_${JOB_LOG_ID}" \
+  "${_EXTRA_MAIN[@]}"
 
 echo "[crk-7b] Done."

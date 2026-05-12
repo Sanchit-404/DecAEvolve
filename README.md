@@ -1,13 +1,18 @@
 # decaevolve / LLM-SR (GRPO + AtomSR)
 
-Offline GRPO training and symbolic regression experiments (CRK chemistry, oscillators, etc.). This repo expects a **second tree** under `external/decaevolve-llama/` (patched `main.py` and `llmsr`).
+Offline GRPO training and symbolic regression experiments (CRK chemistry, oscillators, etc.).
+
+## Where the job entrypoint lives
+
+- **`decaevolve_job/`** — self-contained copy of the code that Slurm/local scripts run (`main.py` + `llmsr/` + `llm_engine/`). Prefer this; it is versioned in git. `main.py` resolves `data/` and relative `spec_path` against the **repository root** (parent of `decaevolve_job/`), or `DECAEVOLVE_REPO_ROOT` if set.
+- **`external/decaevolve-llama/`** — optional legacy checkout (often gitignored). `scripts/run_crk_offline_grpo_atomsr_qwen7b.sh` uses `decaevolve_job/main.py` when present, else falls back to external.
 
 ## GitHub / sharing checklist
 
 | Topic | Status |
 |--------|--------|
 | **Secrets** | `.hf_token`, `.wandb_api_key` are gitignored — never commit them. |
-| **External code** | `external/decaevolve-llama/` is gitignored by default. Ship a zip or document how to unpack it (see below). Without it, Slurm/local CRK scripts **will not run**. |
+| **External code** | `external/decaevolve-llama/` is optional if `decaevolve_job/` is present. Older docs referred to unpacking external here. |
 | **Large artifacts** | `logs/`, `wandb/`, `grpo_checkpoints/`, `data/` are not all ignored — **review** before `git add` (datasets can be large). Prefer documenting HF export instead of committing every CSV. |
 | **Lockfile** | `requirements-lock.txt` pins the last known-good `pip` set (Linux, CUDA 12, `llmsr` conda env). Regenerate with `bash scripts/refresh_requirements_lock.sh` after upgrading packages. |
 | **Platform** | Training is aimed at **Linux + NVIDIA GPU** (2 GPUs for CRK 7B + vLLM). macOS/CPU-only is not supported for the full GRPO+vLLM path. |
@@ -22,14 +27,15 @@ pip install -r requirements-lock.txt
 
 For a looser install (may drift): `pip install -r requirements.txt` then install `vllm` / `trl` per your CUDA stack.
 
-## External `decaevolve-llama` snapshot
+## Refreshing `decaevolve_job/` from a private snapshot
 
-1. Obtain the patched snapshot (e.g. `decaevolve-llama.zip` from your team, or your own export).
-2. Unpack so that this file exists:
+If you still maintain `external/decaevolve-llama/decaevolve-llama/`, sync into the tracked folder (then re-apply the small `main.py` repo-root patch if you overwrite it):
 
-   `external/decaevolve-llama/decaevolve-llama/main.py`
-
-3. Do not commit the unpacked tree if you keep it gitignored; contributors repeat step 1–2.
+```bash
+rsync -a --delete external/decaevolve-llama/decaevolve-llama/llmsr/ decaevolve_job/llmsr/
+rsync -a external/decaevolve-llama/decaevolve-llama/llm_engine/ decaevolve_job/llm_engine/
+# merge main.py by hand — decaevolve_job/main.py adds DECAEVOLVE_REPO_ROOT / spec resolution
+```
 
 ## CRK datasets (`data/crk{N}/`)
 
