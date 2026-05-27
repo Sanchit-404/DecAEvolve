@@ -1,4 +1,11 @@
-# DevAEvolve: Decompose, Adapt, and Evolve: Three Pillars of Effective LLM-based Scientific Equation Discovery
+# DevAEvolve: Decompose, Adapt, and Evolve for Scientific Discovery
+
+Official Implementation of paper [**DecAEvolve: Decompose, Adapt, and Evolve, or, Three Pillars of Effective Scientific Equation Discovery**](https://openreview.net/forum?id=nApMHaYSM6&referrer=%5Bthe%20profile%20of%20Parshin%20Shojaee%5D(%2Fprofile%3Fid%3D~Parshin_Shojaee1)).
+This repository includes all code for data generation, training pipelines, and evaluation.
+
+
+![viz](./images/motiv.png)
+
 
 Offline GRPO training and symbolic regression experiments (CRK chemistry, oscillators, etc.).
 
