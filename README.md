@@ -1,4 +1,4 @@
-# decaevolve / LLM-SR (GRPO + AtomSR)
+# DevAEvolve: Decompose, Adapt, and Evolve: Three Pillars of Effective LLM-based Scientific Equation Discovery
 
 Offline GRPO training and symbolic regression experiments (CRK chemistry, oscillators, etc.).
 
